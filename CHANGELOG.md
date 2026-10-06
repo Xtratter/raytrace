@@ -2,6 +2,12 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 1.1.0 - on-screen sticks and fly camera
+
+- Added: two on-screen gamepad sticks (left = move / zoom, right = look / orbit)
+- Added: free-fly camera mode alongside the orbit camera
+- Added: four Scene tab settings - camera mode, on-screen sticks, move speed, look speed
+
 ## 1.0.0 - initial release
 
 - SDF scene rendered with Rust + wgpu (Vulkan): hybrid and progressive path-tracing modes

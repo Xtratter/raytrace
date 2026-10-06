@@ -28,6 +28,7 @@ The interface is bilingual (English and Russian, follows the system language); t
 - **Presets**: Performance, Balanced, Quality (and Custom once you change anything)
 - **Many switches**: soft shadows, global illumination, caustics, reflections and refraction, lamp brightness and colours,
   animation, auto-orbit, field of view, exposure, tonemap, sky (day / dusk / night)
+- **Two camera modes**: orbit (default) and free-fly, driven by touch or by two on-screen gamepad sticks
 - **Material 3 Expressive UI** without sliders: chips, switches, steppers; themes (system, light, dark, graphite, AMOLED),
   haptics, soft blurred edges, a status island with fps / frame time / resolution
 
@@ -37,6 +38,8 @@ The interface is bilingual (English and Russian, follows the system language); t
 |---|---|
 | One finger drag | Orbit the camera |
 | Pinch | Zoom |
+| Left stick | Move (fly mode) / zoom (orbit mode); up = forward / zoom in |
+| Right stick | Look (fly mode) / orbit (orbit mode); up = look up |
 | Double tap | Reset the camera |
 | Gear button | Open the settings sheet |
 | Tap the status island | Toggle HUD detail |
@@ -62,6 +65,10 @@ The interface is bilingual (English and Russian, follows the system language); t
 | | Lamp A / B colour | six colours each |
 | Scene | Animation | off / on |
 | | Auto-orbit | off / slow / fast |
+| | Camera mode | orbit / fly |
+| | On-screen sticks | off / on |
+| | Move speed | 1-5 |
+| | Look speed | 1-5 |
 | | Field of view | 40-90 |
 | | Exposure | -4..+4 |
 | | Tonemap | ACES / Reinhard / none |
@@ -143,6 +150,8 @@ For comparison, the prototype this app grew out of ran at **7.1 fps** (356x767, 
 - Global illumination and shadows use approximations of the Menger sponge (a bounding box / analytic spheres for secondary rays), with some blue speckle and tint on the floor and spheres
 - Dotted lines along the room wall edges are visible and were not investigated
 - Very heavy settings are scaled down automatically by a safety governor (lower resolution, 1 sample per pixel) until frames get fast again, so the image can look coarser than the chosen scale
+- Fly mode is clamped to the room box (x ±5.5, y 0.3..8, z -6.5..12) and has no collision with objects
+- The on-screen sticks are covered by unit tests only; they have not been checked on a device yet
 - Needs Vulkan 1.1 and an Adreno-class GPU; arm64 only
 - No Vulkan-unavailable screen: the app logs the error and shows a black surface
 

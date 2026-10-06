@@ -47,9 +47,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   }
   let col = select(mean, sanitize(cur.rgb), traced);
 
+  let still_pt = P.mode == 1u && has(F_STILL);
   var hist = vec3<f32>(0.0);
   var n = 0.0;
-  if (has(F_TEMPORAL) && P.history_reset == 0u) {
+  if (still_pt && has(F_TEMPORAL) && P.history_reset == 0u) {
+    // camera + scene identical: exact texel, no reprojection/bilinear (avoids repeated low-pass)
+    let h4 = textureLoad(hist_in, ip, 0);
+    hist = sanitize(h4.rgb);
+    n = h4.a;
+    if (!(n > 0.0) || n != n) { n = 0.0; }
+  } else if (has(F_TEMPORAL) && P.history_reset == 0u) {
     // same pixel convention as trace.wgsl: pixel + 0.5 + jitter
     let rd = cam_ray(vec2<f32>(ip) + vec2<f32>(0.5) + P.jitter, res, P.cam_pos, P.cam_target, P.fov);
     let wp = P.cam_pos + rd * gc.x;
@@ -77,7 +84,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
   }
 
-  let still_pt = P.mode == 1u && has(F_STILL);
   let moved = has(F_MOVED);
   let floor_w = P.hist_floor;
   var out_col = col;

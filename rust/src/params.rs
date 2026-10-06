@@ -1,6 +1,6 @@
 //! Parameter table shared with Kotlin (see ../params.json). Ids are stable; do not renumber.
 
-pub const N: usize = 26;
+pub const N: usize = 30;
 
 #[derive(Clone, Copy)]
 pub struct Def {
@@ -41,6 +41,10 @@ pub const DEFS: [Def; N] = [
     d(23, 0.0, 0.0, 2.0),  // sky
     d(24, 1.0, 0.0, 2.0),  // hud
     d(25, 1.0, 0.0, 1.0),  // frame_limit
+    d(26, 0.0, 0.0, 1.0),  // cam_mode (0 orbit, 1 fly)
+    d(27, 1.0, 0.0, 1.0),  // sticks (on-screen sticks visible; Kotlin only)
+    d(28, 3.0, 1.0, 5.0),  // move_speed
+    d(29, 3.0, 1.0, 5.0),  // look_speed
 ];
 
 pub mod id {
@@ -70,6 +74,10 @@ pub mod id {
     pub const SKY: usize = 23;
     pub const HUD: usize = 24;
     pub const FRAME_LIMIT: usize = 25;
+    pub const CAM_MODE: usize = 26;
+    pub const STICKS: usize = 27;
+    pub const MOVE_SPEED: usize = 28;
+    pub const LOOK_SPEED: usize = 29;
 }
 
 /// Bits of `Params.flags` (mirrored in common.wgsl).
@@ -97,6 +105,15 @@ pub const LIGHT_B: [[f32; 3]; 6] = [
 ];
 /// Strength 1..5 -> minimum history weight (higher strength = smoother).
 pub const HIST_FLOOR: [f32; 5] = [0.5, 0.33, 0.2, 0.12, 0.07];
+
+/// Move/look speed level 1..5 -> multiplier.
+pub const SPEED_K: [f32; 5] = [0.4, 0.7, 1.0, 1.5, 2.2];
+pub fn speed_factor(level: f32) -> f32 {
+    if !level.is_finite() {
+        return 1.0;
+    }
+    SPEED_K[(level.round().clamp(1.0, 5.0) as usize) - 1]
+}
 
 /// Params that change what the image looks like, so accumulated history must be dropped.
 pub fn affects_history(id: usize) -> bool {
@@ -232,6 +249,28 @@ mod tests {
         s.set(6, 1.0);
         assert_ne!(s.flags() & flags::CHECKER, 0);
         assert_ne!(s.flags() & flags::TEMPORAL, 0);
+    }
+
+    #[test]
+    fn speed_factor_table() {
+        assert_eq!(speed_factor(1.0), 0.4);
+        assert_eq!(speed_factor(3.0), 1.0);
+        assert_eq!(speed_factor(5.0), 2.2);
+        assert_eq!(speed_factor(99.0), 2.2);
+        assert_eq!(speed_factor(-3.0), 0.4);
+        assert_eq!(speed_factor(f32::NAN), 1.0);
+    }
+
+    #[test]
+    fn new_params_defs_and_history() {
+        assert_eq!(N, 30);
+        assert_eq!(id::CAM_MODE, 26);
+        assert_eq!(id::STICKS, 27);
+        assert_eq!(id::MOVE_SPEED, 28);
+        assert_eq!(id::LOOK_SPEED, 29);
+        let s = Store::new();
+        assert_eq!((s.get(26), s.get(27), s.get(28), s.get(29)), (0.0, 1.0, 3.0, 3.0));
+        assert!(!affects_history(id::CAM_MODE));
     }
 
     #[test]

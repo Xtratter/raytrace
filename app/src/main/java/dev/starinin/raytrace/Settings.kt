@@ -13,6 +13,7 @@ object Ids {
     const val COL_A = 16; const val COL_B = 17; const val ANIM = 18; const val ORBIT = 19
     const val FOV = 20; const val EXPOSURE = 21; const val TONEMAP = 22; const val SKY = 23
     const val HUD = 24; const val FRAME_LIMIT = 25
+    const val CAM_MODE = 26; const val STICKS = 27; const val MOVE_SPEED = 28; const val LOOK_SPEED = 29
     const val THEME = 100; const val PRESET = 102
 }
 
@@ -34,6 +35,8 @@ class Settings(private val kv: KeyValue, private val push: (Int, Float) -> Unit)
             d(18, "anim", 1f, 0f, 1f), d(19, "orbit", 0f, 0f, 2f), d(20, "fov", 60f, 40f, 90f),
             d(21, "exposure", 0f, -4f, 4f), d(22, "tonemap", 0f, 0f, 2f), d(23, "sky", 0f, 0f, 2f),
             d(24, "hud", 1f, 0f, 2f), d(25, "frame_limit", 1f, 0f, 1f),
+            d(26, "cam_mode", 0f, 0f, 1f), d(27, "sticks", 1f, 0f, 1f),
+            d(28, "move_speed", 3f, 1f, 5f), d(29, "look_speed", 3f, 1f, 5f),
             d(100, "theme", 0f, 0f, 4f, false), d(102, "preset", 1f, 0f, 3f, false),
         )
     }

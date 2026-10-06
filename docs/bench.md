@@ -12,3 +12,8 @@
   Path tracing still (0=1): 0.9 fps / gpu ~1160 ms; wall/floor hp-std 14.1 / 12.4 at 4 s -> 2.2 / 2.5 at 20 s; no NaN log lines.
 - task 7 a-trous + full present (352x792 hybrid, 6=1 still, 0=0 2=0 18=0 19=0, spp 1, bounces 6): 8=0 9.2-9.3 fps / gpu 106-111 ms; 8=2 8.9 fps / 111-112 ms; 8=3 8.8 fps / 112-115 ms (3 passes cost ~5 ms, ~4%). Sharpen 9=3: within noise.
   Screenshot metrics (hp-std wall / green wall; p99 gradient floor): 8=0 6.0 / 5.7, 22.0; 8=2 1.9 / 1.3, 28.6; 8=3 0.9 / 0.7, 29.1 (checker edges kept). First weights (wl = exp(-1.5|dl|)) gave 0.6 grain but blurred the checker: p99 floor 8.5.
+- task 8 adaptive + frame limit (device, POCO F3, display 120 Hz, Mailbox+Fifo available):
+  - heavy (0=0 1=4 2=1 3=60, all features on, bounces 6): scale at the 0.25 floor (264x600) by the first 2 s log, then flat 15.0 fps / gpu 63-68 ms for 16 s (target unreachable, no oscillation). Non-adaptive 1=4 2=0: 1.1 fps / gpu 915 ms at 1080x2400.
+  - light (12=0 13=0 14=0 11=0): target 30 -> settles 0.49x (520x1168), 36 fps / gpu 26.4 ms (15% headroom design); target 60 -> 0.32x (344x760), 70 fps / gpu 13.2 ms. Stable, one transition each.
+  - frame limit (light, 0.25x, adaptive off): 25=0 100 fps, 25=1 99 fps (GPU-bound ~9 ms, display 120 Hz, so no visible difference); 0.33x: 67 fps either way.
+  - extremes: 1=0,2=1: 99-100 fps; 1=4,2=0: 1.1 fps; no crash. Landscape rotation (2400x1080): surface reconfigured, rendering continues (75 fps, 0.29x), no panic.

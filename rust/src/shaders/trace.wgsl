@@ -13,6 +13,10 @@ var<private> g_skip: bool; // checkerboard: pixel only fills the g-buffer
 
 const PI: f32 = 3.14159265;
 const MAX_STEPS: i32 = 72;
+// Step budget for primary shadow rays from Menger hits (exact map, so the sponge self-shadows
+// correctly). Gained: ~most of the cost of the full 72-step exact march; lost: occluders
+// farther than ~24 steps away count as unshadowed (an exhausted march = lit).
+const MENGER_SHADOW_STEPS: i32 = 24;
 // GI rays: one cosine-weighted bounce marched in map_gi (Menger sponge replaced by an axis-aligned
 // bounding box) with GI_STEPS steps and a 10 unit range. Rays that leave the range or run out of
 // steps are not sky: they contribute a neutral grey (0.3 x sky luminance), so no light leaks in
@@ -338,7 +342,7 @@ fn isect_sphere(ro: vec3<f32>, rd: vec3<f32>, c: vec3<f32>, r: f32) -> vec2<f32>
 
 // Next-event estimation: returns E/pi (multiply by albedo). Glass is opaque for shadows,
 // light passing through it is handled by caustic() (hybrid) or BSDF paths (path tracing).
-fn direct_light(p: vec3<f32>, n: vec3<f32>, steps: i32) -> vec3<f32> {
+fn direct_light(p: vec3<f32>, n: vec3<f32>, steps: i32, exact: bool) -> vec3<f32> {
   let li = select(0u, 1u, rnd() < 0.5);
   let c = light_c(li);
   let r = light_r(li);
@@ -360,8 +364,8 @@ fn direct_light(p: vec3<f32>, n: vec3<f32>, steps: i32) -> vec3<f32> {
   }
   if (has(F_SHADOWS)) {
     var sh: vec3<f32>;
-    if (steps < MAX_STEPS) { sh = march_gi(ro, dir, 1.0, hs.x - 0.01, steps); }
-    else { sh = march(ro, dir, 1.0, hs.x - 0.01); }
+    if (exact) { sh = march_n(ro, dir, 1.0, hs.x - 0.01, steps); }
+    else { sh = march_gi(ro, dir, 1.0, hs.x - 0.01, steps); }
     if (sh.z > 0.5) {
       return vec3<f32>(0.0);
     }
@@ -521,13 +525,13 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
 
     if (m.kind == 0u) {
       if (!pt) {
-        var lo = direct_light(p, nf, select(16, MAX_STEPS, abs(h.y - 5.0) < 0.5));
+        var lo = direct_light(p, nf, select(16, MENGER_SHADOW_STEPS, abs(h.y - 5.0) < 0.5), abs(h.y - 5.0) < 0.5);
         if (has(F_CAUSTICS)) { lo += caustic(p, nf); }
         if (has(F_GI)) { lo += indirect(p, nf); }
         col += thr * m.albedo * lo;
         break;
       }
-      col += thr * m.albedo * direct_light(p, nf, MAX_STEPS);
+      col += thr * m.albedo * direct_light(p, nf, MAX_STEPS, true);
       if (!has(F_GI)) { break; }
       diff_seen = true;
       thr = thr * m.albedo;

@@ -86,6 +86,9 @@ impl Renderer {
             col_a: ca, pad2: 0.0, col_b: cb, pad3: 0.0,
         };
         let ms = self.gfx.render(&p, s.get(id::DENOISE) as u32, (self.frame & 1) as usize);
+        if ms < 0.0 {
+            std::thread::sleep(std::time::Duration::from_millis(8));
+        }
         if ms >= 0.0 {
             if s.on(id::ADAPTIVE) { self.adaptive.update(ms, s.get(id::TARGET_FPS), self.start.elapsed().as_secs_f32()); }
             self.prev_pose = pose;

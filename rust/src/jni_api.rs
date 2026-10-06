@@ -10,7 +10,7 @@ use ndk::native_window::NativeWindow;
 
 use crate::{gfx::Gfx, renderer::Renderer};
 
-pub enum Cmd { Param(i32, f32), Orbit(f32, f32), Zoom(f32), ResetCam, Resize(u32, u32), Stop }
+pub enum Cmd { Param(i32, f32), Orbit(f32, f32), Sticks(f32, f32, f32, f32), Zoom(f32), ResetCam, Resize(u32, u32), Stop }
 
 struct Engine { tx: Sender<Cmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; 8]>> }
 
@@ -44,6 +44,7 @@ pub extern "system" fn Java_dev_starinin_raytrace_Native_start(env: JNIEnv, _c: 
                     Ok(Cmd::Stop) => break 'run,
                     Ok(Cmd::Param(i, v)) => r.set_param(i, v),
                     Ok(Cmd::Orbit(dx, dy)) => r.cam.orbit(dx, dy),
+                    Ok(Cmd::Sticks(a, b, c, d)) => r.sticks = [a, b, c, d],
                     Ok(Cmd::Zoom(f)) => r.cam.zoom(f),
                     Ok(Cmd::ResetCam) => r.cam.reset(),
                     Ok(Cmd::Resize(w, h)) => r.resize(w, h),
@@ -78,6 +79,7 @@ fn stop_engine() {
 #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_resize(_e: JNIEnv, _c: JClass, w: jint, h: jint) { send(Cmd::Resize(w.max(1) as u32, h.max(1) as u32)); }
 #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_setParam(_e: JNIEnv, _c: JClass, id: jint, v: jfloat) { send(Cmd::Param(id, v)); }
 #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_orbit(_e: JNIEnv, _c: JClass, dx: jfloat, dy: jfloat) { send(Cmd::Orbit(dx, dy)); }
+#[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_sticks(_e: JNIEnv, _c: JClass, lx: jfloat, ly: jfloat, rx: jfloat, ry: jfloat) { send(Cmd::Sticks(lx, ly, rx, ry)); }
 #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_zoom(_e: JNIEnv, _c: JClass, f: jfloat) { send(Cmd::Zoom(f)); }
 #[no_mangle] pub extern "system" fn Java_dev_starinin_raytrace_Native_resetCamera(_e: JNIEnv, _c: JClass) { send(Cmd::ResetCam); }
 

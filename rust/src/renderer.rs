@@ -2,12 +2,13 @@
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use crate::{adaptive::*, camera::Camera, gfx::*, halton, params::*};
+use crate::{adaptive::*, camera::{Camera, Mode}, gfx::*, halton, params::*};
 
 pub struct Renderer {
     gfx: Gfx,
     pub store: Store,
     pub cam: Camera,
+    pub sticks: [f32; 4],
     adaptive: AdaptiveRes,
     governor: Governor,
     warmup: u32,
@@ -31,7 +32,7 @@ impl Renderer {
     pub fn new(gfx: Gfx, win: (u32, u32), stats: Arc<Mutex<[f32; 8]>>) -> Renderer {
         let cam = Camera::new();
         let pose = cam.pose();
-        Renderer { gfx, store: Store::new(), cam, adaptive: AdaptiveRes::new(0.25, 0.33, 0.33), governor: Governor::new(), warmup: 3, last_ms: 0.0, win,
+        Renderer { gfx, store: Store::new(), cam, sticks: [0.0; 4], adaptive: AdaptiveRes::new(0.25, 0.33, 0.33), governor: Governor::new(), warmup: 3, last_ms: 0.0, win,
             frame: 0, seed: 1, time: 0.0, last: Instant::now(), start: Instant::now(), prev_pose: pose,
             prev_jitter: [0.0; 2], reset_history: true, fps_t: Instant::now(), fps_n: 0, log_t: Instant::now(), stats }
     }
@@ -40,6 +41,7 @@ impl Renderer {
         if self.store.set(id, v) == Change::Changed && affects_history(id as usize) {
             self.reset_history = true;
         }
+        if id as usize == id::CAM_MODE { self.cam.set_mode(Mode::from_param(self.store.get(id::CAM_MODE))); }
         if id as usize == id::FRAME_LIMIT { self.gfx.set_present_mode(self.store.on(id::FRAME_LIMIT)); }
         if id as usize == id::SCALE_IDX { self.reset_history = true; }
     }
@@ -66,7 +68,8 @@ impl Renderer {
         if self.gfx.ensure_targets(rw, rh) { self.reset_history = true; self.warmup = 2; }
         let gov = governor_active(self.warmup);
 
-        self.cam.update(dt, s.get(id::ORBIT) as u32);
+        self.cam.update(dt, s.get(id::ORBIT) as u32, Mode::from_param(s.get(id::CAM_MODE)), self.sticks,
+            speed_factor(s.get(id::MOVE_SPEED)), speed_factor(s.get(id::LOOK_SPEED)));
         let pose = self.cam.pose();
         let fov = s.get(id::FOV).to_radians();
         let moved = pose != self.prev_pose;

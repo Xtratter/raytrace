@@ -10,6 +10,7 @@ object Native {
     @JvmStatic external fun setParam(id: Int, v: Float)
     @JvmStatic external fun orbit(dx: Float, dy: Float)
     @JvmStatic external fun zoom(f: Float)
+    @JvmStatic external fun sticks(lx: Float, ly: Float, rx: Float, ry: Float)
     @JvmStatic external fun resetCamera()
     @JvmStatic external fun stats(): FloatArray
 }

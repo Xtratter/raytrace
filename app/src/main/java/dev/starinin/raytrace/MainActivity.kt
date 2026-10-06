@@ -19,6 +19,7 @@ class MainActivity : Activity() {
     private lateinit var render: RenderView
     private lateinit var hud: Hud
     private lateinit var sheet: SettingsSheet
+    private lateinit var sticks: SticksLayer
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
         override fun run() { hud.update(Native.stats(), settings.get(Ids.HUD).toInt()); handler.postDelayed(this, 500) }
@@ -46,6 +47,12 @@ class MainActivity : Activity() {
         root.addView(render, FrameLayout.LayoutParams(-1, -1))
         buildOverlay()
         setContentView(root)
+        if (debuggable) intent.getStringExtra("stick")?.let { str ->
+            // debug: "lx,ly,rx,ry" applied once the engine is up
+            val v = str.split(',').map { it.trim().toFloatOrNull() }
+            if (v.size == 4 && v.all { it != null && it.isFinite() })
+                handler.postDelayed({ Native.sticks(v[0]!!, v[1]!!, v[2]!!, v[3]!!) }, 1500)
+        }
         if (debuggable) intent.getIntExtra("tab", -1).let { if (it >= 0) sheet.showTab(it) }   // debug: open the sheet at a tab
     }
 
@@ -60,6 +67,8 @@ class MainActivity : Activity() {
         while (root.childCount > 1) root.removeViewAt(1)
         val dp = resources.displayMetrics.density
         fun px(v: Float) = (v * dp).toInt()
+        sticks = SticksLayer(this).also { it.onChange = { lx, ly, rx, ry -> Native.sticks(lx, ly, rx, ry) } }
+        root.addView(sticks, FrameLayout.LayoutParams(-1, -1))
         hud = Hud(this)
         hud.update(Native.stats(), settings.get(Ids.HUD).toInt())
         root.addView(hud, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply { setMargins(px(16f), px(40f), 0, 0) })
@@ -68,7 +77,12 @@ class MainActivity : Activity() {
         root.addView(gear, FrameLayout.LayoutParams(px(52f), px(52f), Gravity.TOP or Gravity.END).apply { setMargins(0, px(34f), px(16f), 0) })
         sheet = SettingsSheet(this, settings) { val t = sheet.tab; buildOverlay(); sheet.showTab(t) }
         root.addView(sheet, FrameLayout.LayoutParams(-1, -1))
+        sheet.onOpenChanged = { updateSticks() }
+        sheet.onChanged = { if (it == Ids.STICKS) updateSticks() }
+        updateSticks()
     }
+
+    private fun updateSticks() = sticks.setSticksVisible(settings.on(Ids.STICKS) && !sheet.isOpen)
 
     override fun onConfigurationChanged(c: Configuration) {
         super.onConfigurationChanged(c)
@@ -80,7 +94,7 @@ class MainActivity : Activity() {
     }
 
     override fun onResume() { super.onResume(); handler.post(tick) }
-    override fun onPause() { handler.removeCallbacks(tick); super.onPause() }
+    override fun onPause() { handler.removeCallbacks(tick); sticks.release(); super.onPause() }
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (sheet.isClosing) return   // back during the hide animation must not exit the app

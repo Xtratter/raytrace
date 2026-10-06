@@ -26,6 +26,10 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
     private val scroll = ScrollView(ctx).apply { isVerticalScrollBarEnabled = false }
     private val content = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(0, px(4f), 0, px(24f)) }   // rows pad themselves: chip rows scroll edge to edge
     var tab = 0; private set
+    /** Called with the id after any setting changes through the sheet. */
+    var onChanged: (Int) -> Unit = {}
+    /** Called when the sheet opens or starts closing. */
+    var onOpenChanged: () -> Unit = {}
     /** Nearly opaque: text stays readable over a bright scene. */
     private val fill = M3.withAlpha(M3.surface, 0.94f)
     /** True while a hide animation runs: the sheet already counts as closed (the gear toggles correctly). */
@@ -73,6 +77,7 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
         closing = false
         panel.animate().cancel()   // drops a pending hide; its end action also checks [closing]
         visibility = VISIBLE
+        onOpenChanged()
         if (!animate) { panel.translationY = 0f; return }
         if (wasClosed) panel.translationY = px(400f).toFloat()
         panel.animate().translationY(0f).setDuration(220).withEndAction(null).start()
@@ -83,6 +88,7 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
     fun hide() {
         if (!isOpen) return
         closing = true
+        onOpenChanged()
         panel.animate().cancel()
         panel.animate().translationY(px(400f).toFloat()).setDuration(180)
             .withEndAction { if (closing) { closing = false; visibility = GONE } }.start()
@@ -112,7 +118,7 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
     }
 
     private fun set(id: Int, v: Float, rebuildAfter: Boolean = false) {
-        s.set(id, v); Presets.touch(s, id)
+        s.set(id, v); Presets.touch(s, id); onChanged(id)
         if (id == Ids.THEME) { onTheme(); return }   // the whole overlay is rebuilt in the new colours
         if (rebuildAfter) rebuild()
     }
@@ -192,8 +198,13 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
     }
 
     private fun scene() {
+        chips(t("Camera mode", "Режим камеры"), Ids.CAM_MODE, listOf(t("Orbit", "Орбита") to 0f, t("Fly", "Полёт") to 1f))
+        toggle(t("On-screen sticks", "Экранные стики"), Ids.STICKS)
+        val speeds = listOf("0.4×", "0.7×", "1×", "1.5×", "2.2×")
+        stepper(t("Move speed", "Скорость движения"), Ids.MOVE_SPEED, 1f) { speeds[it.toInt().coerceIn(1, 5) - 1] }
+        stepper(t("Look speed", "Скорость взгляда"), Ids.LOOK_SPEED, 1f) { speeds[it.toInt().coerceIn(1, 5) - 1] }
         toggle(t("Animation", "Анимация"), Ids.ANIM)
-        chips(t("Auto-orbit", "Автовращение"), Ids.ORBIT, listOf(t("Off", "Выкл") to 0f, t("Slow", "Медленно") to 1f, t("Fast", "Быстро") to 2f))
+        chips(t("Auto-orbit (Orbit mode)", "Автовращение (режим «Орбита»)"), Ids.ORBIT, listOf(t("Off", "Выкл") to 0f, t("Slow", "Медленно") to 1f, t("Fast", "Быстро") to 2f))
         stepper(t("Field of view", "Угол обзора"), Ids.FOV, 5f) { "${it.toInt()}°" }
         stepper(t("Exposure", "Экспозиция"), Ids.EXPOSURE, 1f) { "%+.1f EV".format(it * 0.5f) }
         chips(t("Tonemap", "Тональная кривая"), Ids.TONEMAP, listOf("ACES" to 0f, "Reinhard" to 1f, t("None", "Нет") to 2f))
@@ -206,7 +217,7 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
         toggle(t("Limit to display refresh", "Лимит по частоте экрана"), Ids.FRAME_LIMIT)
         content.addView(M3Widgets.button(context, t("Reset to defaults", "Сбросить настройки"), M3Widgets.ButtonKind.DANGER) {
             val theme = s.get(Ids.THEME)
-            s.reset(); Presets.apply(s, 1)
+            s.reset(); Presets.apply(s, 1); onChanged(Ids.STICKS)
             if (s.get(Ids.THEME) != theme) onTheme() else rebuild()
         }, LinearLayout.LayoutParams(-1, px(52f)).apply { topMargin = px(20f); marginStart = px(16f); marginEnd = px(16f) })
     }

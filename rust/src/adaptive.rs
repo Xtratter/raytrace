@@ -47,6 +47,41 @@ impl AdaptiveRes {
     }
 }
 
+/// Safety governor, independent of the adaptive toggle: bounds the cost of a single GPU
+/// dispatch so that very heavy settings cannot trigger an ANR or a GPU watchdog reset.
+/// `limit_scale` is a multiplier (<= 1) applied on top of the user/adaptive render scale.
+pub struct Governor {
+    pub limit_scale: f32,
+    last_change: f32,
+}
+
+impl Governor {
+    pub const FLOOR: f32 = 0.15;
+    /// A frame slower than this is "dangerous": cut the scale (and the caller forces spp = 1).
+    pub const SLOW_MS: f32 = 1200.0;
+    /// Recover only when frames are clearly fast.
+    pub const FAST_MS: f32 = 500.0;
+
+    pub fn new() -> Self {
+        Governor { limit_scale: 1.0, last_change: f32::NEG_INFINITY }
+    }
+
+    /// Returns the cap multiplier for the next frame. Silent in the normal range.
+    pub fn update(&mut self, gpu_ms: f32, now_s: f32) -> f32 {
+        if !gpu_ms.is_finite() || gpu_ms <= 0.0 {
+            return self.limit_scale;
+        }
+        if gpu_ms > Self::SLOW_MS {
+            self.limit_scale = (self.limit_scale * 0.6).max(Self::FLOOR);
+            self.last_change = now_s;
+        } else if gpu_ms < Self::FAST_MS && self.limit_scale < 1.0 && now_s - self.last_change >= 2.0 {
+            self.limit_scale = (self.limit_scale * 1.05).min(1.0);
+            self.last_change = now_s;
+        }
+        self.limit_scale
+    }
+}
+
 /// Render size: at least 8x8, multiple of 8 px (rounded down), never larger than the window.
 pub fn render_size(win_w: u32, win_h: u32, scale: f32) -> (u32, u32) {
     let f = |v: u32| (((v as f32 * scale) as u32) & !7).clamp(8, v.max(8));
@@ -103,5 +138,51 @@ mod tests {
         assert_eq!(render_size(100, 100, 1.0), (96, 96));
         let (w, h) = render_size(4, 4000, 1.0);
         assert!(w >= 8 && h <= 4000);
+    }
+
+    #[test]
+    fn governor_drops_on_huge_frame() {
+        let mut g = Governor::new();
+        let c = g.update(5000.0, 1.0);
+        assert!((c - 0.6).abs() < 1e-6, "{c}");
+    }
+
+    #[test]
+    fn governor_never_below_floor() {
+        let mut g = Governor::new();
+        let mut c = 1.0;
+        for i in 0..50 { c = g.update(5000.0, i as f32); }
+        assert_eq!(c, Governor::FLOOR);
+    }
+
+    #[test]
+    fn governor_recovers_slowly_when_fast() {
+        let mut g = Governor::new();
+        g.update(5000.0, 0.0);
+        let c0 = g.limit_scale;
+        assert_eq!(g.update(100.0, 1.0), c0); // too soon
+        let c1 = g.update(100.0, 2.5);
+        assert!(c1 > c0 && c1 <= c0 * 1.05 + 1e-6, "{c1}");
+        let mut c = c1;
+        for i in 0..200 { c = g.update(100.0, 5.0 + 2.0 * i as f32); }
+        assert_eq!(c, 1.0);
+    }
+
+    #[test]
+    fn governor_idle_in_normal_range() {
+        let mut g = Governor::new();
+        for i in 0..20 { assert_eq!(g.update(100.0, i as f32 * 3.0), 1.0); }
+        for i in 0..20 { assert_eq!(g.update(900.0, 100.0 + i as f32), 1.0); }
+    }
+
+    #[test]
+    fn governor_holds_in_mid_band_and_nan_safe() {
+        let mut g = Governor::new();
+        g.update(5000.0, 0.0);
+        let c = g.limit_scale;
+        assert_eq!(g.update(800.0, 10.0), c); // 500..1200: hold
+        assert_eq!(g.update(f32::NAN, 20.0), c);
+        assert_eq!(g.update(f32::INFINITY, 21.0), c);
+        assert_eq!(g.update(-1.0, 22.0), c);
     }
 }

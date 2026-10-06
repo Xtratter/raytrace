@@ -1,0 +1,7 @@
+.superpowers/
+build/
+.gradle/
+local.properties
+rust/target/
+app/src/main/jniLibs/
+*.apk

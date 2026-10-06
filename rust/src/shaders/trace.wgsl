@@ -17,7 +17,7 @@ const MAX_STEPS: i32 = 72;
 // speckle near edges. A ray that runs out of steps is not sky: it contributes a conservative
 // neutral grey estimate (0.3 x sky luminance) (no light leakage, no black holes). The GI hit's own light uses analytic
 // sphere shadows instead of a second march (see direct_light_gi).
-const GI_STEPS: i32 = 16;
+const GI_STEPS: i32 = 12;
 
 const MIRROR_C: vec3<f32> = vec3<f32>(-1.8, 1.0, 0.2);
 const GLASS_C: vec3<f32> = vec3<f32>(1.2, 0.8, 1.0);
@@ -446,7 +446,7 @@ fn direct_light_gi(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
 fn indirect(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
   let d = cos_hemi(n);
   let ro = p + n * 0.004;
-  let h = march_gi(ro, d, 1.0, 14.0, GI_STEPS);
+  let h = march_gi(ro, d, 1.0, 10.0, GI_STEPS);
   if (h.z < 0.5) {
     if (h.z > 0.1) { return vec3<f32>(dot(sky(d), vec3<f32>(0.1)));  }
     return sky(d);

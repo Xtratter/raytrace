@@ -48,7 +48,8 @@ pub struct Gfx {
     step_bufs: [wgpu::Buffer; 3],
     sampler: wgpu::Sampler,
     trace_pl: wgpu::ComputePipeline, trace_bgl: wgpu::BindGroupLayout,
-    // temporal_pl/temporal_bgl and atrous_pl/atrous_bgl are added in Tasks 6/7.
+    temporal_pl: wgpu::ComputePipeline, temporal_bgl: wgpu::BindGroupLayout,
+    // atrous_pl/atrous_bgl are added in Task 7.
     present_pl: wgpu::RenderPipeline, present_bgl: wgpu::BindGroupLayout,
     targets: Option<Targets>,
     _window: NativeWindow, // dropped after `surface` (field order)
@@ -132,6 +133,10 @@ impl Gfx {
         let cs = wgpu::ShaderStages::COMPUTE;
         let fs = wgpu::ShaderStages::FRAGMENT;
         let trace_bgl = bgl(&device, "trace", &[uniform(0, cs), tex_out(1, wgpu::TextureFormat::Rgba16Float), tex_out(2, wgpu::TextureFormat::Rgba32Float)]);
+        let temporal_bgl = bgl(&device, "temporal", &[
+            uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_in(3, cs, false), tex_in(4, cs, false),
+            tex_out(5, wgpu::TextureFormat::Rgba16Float),
+        ]);
         let present_bgl = bgl(&device, "present", &[
             uniform(0, fs), tex_in(1, fs, true),
             wgpu::BindGroupLayoutEntry { binding: 2, visibility: fs, count: None,
@@ -139,6 +144,11 @@ impl Gfx {
         ]);
 
         let trace_mod = shader(&device, "trace", include_str!("shaders/trace.wgsl"));
+        let temporal_mod = shader(&device, "temporal", include_str!("shaders/temporal.wgsl"));
+        let temporal_pl = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("temporal"), layout: Some(&layout(&device, &temporal_bgl)), module: &temporal_mod,
+            entry_point: Some("main"), compilation_options: Default::default(), cache: None,
+        });
         let present_mod = shader(&device, "present", include_str!("shaders/present.wgsl"));
         let trace_pl = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("trace"), layout: Some(&layout(&device, &trace_bgl)), module: &trace_mod,
@@ -179,7 +189,7 @@ impl Gfx {
 
         Gfx {
             surface, device, queue, config, modes: caps.present_modes, params_buf, step_bufs, sampler,
-            trace_pl, trace_bgl, present_pl, present_bgl, targets: None, _window: window,
+            trace_pl, trace_bgl, temporal_pl, temporal_bgl, present_pl, present_bgl, targets: None, _window: window,
         }
     }
 
@@ -251,10 +261,18 @@ impl Gfx {
             (1, wgpu::BindingResource::TextureView(&t.raw.view)),
             (2, wgpu::BindingResource::TextureView(&t.gbuf[parity].view)),
         ]);
-        // Tasks 6/7 insert temporal + atrous here and change the sampled texture.
+        let temporal_bg = bg(dev, &self.temporal_bgl, &[
+            (0, pb.clone()),
+            (1, wgpu::BindingResource::TextureView(&t.raw.view)),
+            (2, wgpu::BindingResource::TextureView(&t.gbuf[parity].view)),
+            (3, wgpu::BindingResource::TextureView(&t.gbuf[1 - parity].view)),
+            (4, wgpu::BindingResource::TextureView(&t.hist[1 - parity].view)),
+            (5, wgpu::BindingResource::TextureView(&t.hist[parity].view)),
+        ]);
+        // Task 7 inserts atrous here (when iters > 0) and changes the sampled texture.
         let present_bg = bg(dev, &self.present_bgl, &[
             (0, pb),
-            (1, wgpu::BindingResource::TextureView(&t.raw.view)),
+            (1, wgpu::BindingResource::TextureView(&t.hist[parity].view)),
             (2, wgpu::BindingResource::Sampler(&self.sampler)),
         ]);
 
@@ -263,6 +281,12 @@ impl Gfx {
             let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("trace"), timestamp_writes: None });
             cp.set_pipeline(&self.trace_pl);
             cp.set_bind_group(0, &trace_bg, &[]);
+            cp.dispatch_workgroups(t.w.div_ceil(8), t.h.div_ceil(8), 1);
+        }
+        {
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("temporal"), timestamp_writes: None });
+            cp.set_pipeline(&self.temporal_pl);
+            cp.set_bind_group(0, &temporal_bg, &[]);
             cp.dispatch_workgroups(t.w.div_ceil(8), t.h.div_ceil(8), 1);
         }
         {

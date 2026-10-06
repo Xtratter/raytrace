@@ -1,0 +1,28 @@
+[package]
+name = "raytrace"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+name = "raytrace"
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+wgpu = "24.0"
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
+log = "0.4"
+jni = "0.21"
+ndk = { version = "0.9", features = ["rwh_06"] }
+raw-window-handle = "0.6"
+android_logger = "0.14"
+
+[dev-dependencies]
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

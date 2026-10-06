@@ -3,8 +3,12 @@ pub mod camera;
 pub mod halton;
 pub mod params;
 pub mod reproj;
+pub mod shaders;
+#[cfg(target_os = "android")]
 pub mod gfx;
+#[cfg(target_os = "android")]
 pub mod jni_api;
+#[cfg(target_os = "android")]
 pub mod renderer;
 
 /// Android logcat logger (tag "raytrace") + panic hook that logs instead of dying silently.

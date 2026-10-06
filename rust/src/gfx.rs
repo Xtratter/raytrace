@@ -54,8 +54,7 @@ pub struct Gfx {
     _window: NativeWindow, // dropped after `surface` (field order)
 }
 
-fn shader(dev: &wgpu::Device, name: &str, body: &str) -> wgpu::ShaderModule {
-    let src = format!("{}\n{}", include_str!("shaders/common.wgsl"), body);
+fn shader(dev: &wgpu::Device, name: &str, src: String) -> wgpu::ShaderModule {
     dev.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(name), source: wgpu::ShaderSource::Wgsl(src.into()) })
 }
 fn uniform(binding: u32, vis: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
@@ -146,18 +145,18 @@ impl Gfx {
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering) },
         ]);
 
-        let trace_mod = shader(&device, "trace", include_str!("shaders/trace.wgsl"));
-        let temporal_mod = shader(&device, "temporal", include_str!("shaders/temporal.wgsl"));
+        let trace_mod = shader(&device, "trace", crate::shaders::trace());
+        let temporal_mod = shader(&device, "temporal", crate::shaders::temporal());
         let temporal_pl = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("temporal"), layout: Some(&layout(&device, &temporal_bgl)), module: &temporal_mod,
             entry_point: Some("main"), compilation_options: Default::default(), cache: None,
         });
-        let atrous_mod = shader(&device, "atrous", include_str!("shaders/atrous.wgsl"));
+        let atrous_mod = shader(&device, "atrous", crate::shaders::atrous());
         let atrous_pl = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("atrous"), layout: Some(&layout(&device, &atrous_bgl)), module: &atrous_mod,
             entry_point: Some("main"), compilation_options: Default::default(), cache: None,
         });
-        let present_mod = shader(&device, "present", include_str!("shaders/present.wgsl"));
+        let present_mod = shader(&device, "present", crate::shaders::present());
         let trace_pl = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("trace"), layout: Some(&layout(&device, &trace_bgl)), module: &trace_mod,
             entry_point: Some("main"), compilation_options: Default::default(), cache: None,
@@ -341,25 +340,5 @@ impl Gfx {
         let ms = t0.elapsed().as_secs_f32() * 1000.0;
         frame.present();
         ms
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use wgpu::naga;
-
-    fn validate(name: &str, body: &str) {
-        let src = format!("{}\n{}", include_str!("shaders/common.wgsl"), body);
-        let m = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(&src)));
-        naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty())
-            .validate(&m).unwrap_or_else(|e| panic!("{name}: {e:?}"));
-    }
-
-    #[test]
-    fn shaders_validate() {
-        validate("trace", include_str!("shaders/trace.wgsl"));
-        validate("temporal", include_str!("shaders/temporal.wgsl"));
-        validate("atrous", include_str!("shaders/atrous.wgsl"));
-        validate("present", include_str!("shaders/present.wgsl"));
     }
 }

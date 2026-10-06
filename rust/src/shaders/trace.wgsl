@@ -15,9 +15,9 @@ const MAX_STEPS: i32 = 72;
 // GI rays: one cosine-weighted bounce marched in map_gi (Menger -> its bounding box) with a small
 // step budget. 24 steps covers the room at grazing angles well enough; fewer leaves visible dark
 // speckle near edges. A ray that runs out of steps is not sky: it contributes a conservative
-// half-sky estimate (no light leakage, no black holes). The GI hit's own light uses analytic
+// neutral grey estimate (0.3 x sky luminance) (no light leakage, no black holes). The GI hit's own light uses analytic
 // sphere shadows instead of a second march (see direct_light_gi).
-const GI_STEPS: i32 = 24;
+const GI_STEPS: i32 = 16;
 
 const MIRROR_C: vec3<f32> = vec3<f32>(-1.8, 1.0, 0.2);
 const GLASS_C: vec3<f32> = vec3<f32>(1.2, 0.8, 1.0);
@@ -355,7 +355,7 @@ fn direct_light(p: vec3<f32>, n: vec3<f32>, steps: i32) -> vec3<f32> {
   }
   if (has(F_SHADOWS)) {
     var sh: vec3<f32>;
-    if (steps < MAX_STEPS) { sh = march_gi(ro, dir, 1.0, hs.x - 0.01, steps); } else { sh = march(ro, dir, 1.0, hs.x - 0.01); }
+    if (steps < MAX_STEPS) { sh = march_n(ro, dir, 1.0, hs.x - 0.01, steps); } else { sh = march(ro, dir, 1.0, hs.x - 0.01); }
     if (sh.z > 0.5) {
       return vec3<f32>(0.0);
     }
@@ -448,7 +448,8 @@ fn indirect(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
   let ro = p + n * 0.004;
   let h = march_gi(ro, d, 1.0, 14.0, GI_STEPS);
   if (h.z < 0.5) {
-    return sky(d) * select(1.0, 0.5, h.z > 0.1);
+    if (h.z > 0.1) { return vec3<f32>(dot(sky(d), vec3<f32>(0.1)));  }
+    return sky(d);
   }
   let q = ro + d * h.x;
   let m = material(q, h.y);
@@ -480,7 +481,7 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
 
   for (var b = 0; b < max_b; b = b + 1) {
     let sgn = select(1.0, -1.0, inside);
-    let h = march(ro, rd, sgn, 60.0);
+    let h = march_n(ro, rd, sgn, 60.0, select(MAX_STEPS, 48, b > 0));
     if (h.z < 0.5) {
       if (b == 0) { g_depth = 60.0; g_n = -rd; g_id = -1.0; }
       col += thr * sky(rd);
@@ -509,7 +510,7 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
 
     if (m.kind == 0u) {
       if (!pt) {
-        var lo = direct_light(p, nf, MAX_STEPS);
+        var lo = direct_light(p, nf, 40);
         if (has(F_CAUSTICS)) { lo += caustic(p, nf); }
         if (has(F_GI)) { lo += indirect(p, nf); }
         col += thr * m.albedo * lo;

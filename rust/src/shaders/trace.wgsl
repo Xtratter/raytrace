@@ -13,11 +13,15 @@ var<private> g_skip: bool; // checkerboard: pixel only fills the g-buffer
 
 const PI: f32 = 3.14159265;
 const MAX_STEPS: i32 = 72;
-// GI rays: one cosine-weighted bounce marched in map_gi (Menger -> its bounding box) with a small
-// step budget. 24 steps covers the room at grazing angles well enough; fewer leaves visible dark
-// speckle near edges. A ray that runs out of steps is not sky: it contributes a conservative
-// neutral grey estimate (0.3 x sky luminance) (no light leakage, no black holes). The GI hit's own light uses analytic
-// sphere shadows instead of a second march (see direct_light_gi).
+// GI rays: one cosine-weighted bounce marched in map_gi (Menger sponge replaced by an axis-aligned
+// bounding box) with GI_STEPS steps and a 10 unit range. Rays that leave the range or run out of
+// steps are not sky: they contribute a neutral grey (0.3 x sky luminance), so no light leaks in
+// and there are no black holes; the cost is slight darkening near far geometry. Other
+// approximations: the GI hit's light uses analytic sphere occluders (mirror, glass, the two blobs;
+// no torus/Menger, so those do not shadow GI hits) and its normal comes from map_gi; secondary
+// (reflection/refraction) rays are capped at 48 steps; primary shadow rays use map_gi with 16
+// steps, except hits on the Menger sponge (id 5), which use the exact map so the proxy box
+// cannot shadow the sponge's own surface.
 const GI_STEPS: i32 = 12;
 
 const MIRROR_C: vec3<f32> = vec3<f32>(-1.8, 1.0, 0.2);
@@ -356,7 +360,8 @@ fn direct_light(p: vec3<f32>, n: vec3<f32>, steps: i32) -> vec3<f32> {
   }
   if (has(F_SHADOWS)) {
     var sh: vec3<f32>;
-    if (steps < MAX_STEPS) { sh = march_gi(ro, dir, 1.0, hs.x - 0.01, steps); } else { sh = march(ro, dir, 1.0, hs.x - 0.01); }
+    if (steps < MAX_STEPS) { sh = march_gi(ro, dir, 1.0, hs.x - 0.01, steps); }
+    else { sh = march(ro, dir, 1.0, hs.x - 0.01); }
     if (sh.z > 0.5) {
       return vec3<f32>(0.0);
     }
@@ -412,7 +417,7 @@ fn caustic(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
 
 // Cheap light for a GI hit point: one random light, shadowed analytically by the big spheres
 // (mirror, glass, blob cluster) instead of a march. Returns E/pi.
-fn direct_light_gi(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
+fn direct_light_gi(p: vec3<f32>, n: vec3<f32>, id: f32) -> vec3<f32> {
   let li = select(0u, 1u, rnd() < 0.5);
   let c = light_c(li);
   let r = light_r(li);
@@ -434,9 +439,13 @@ fn direct_light_gi(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
   if (has(F_SHADOWS)) {
     let a = isect_sphere(ro, dir, MIRROR_C, 1.0);
     let b = isect_sphere(ro, dir, GLASS_C, GLASS_R);
-    let k = isect_sphere(ro, dir, vec3<f32>(0.15, 0.5, -1.7), 0.7);
+    // the two blob spheres; a hit on a blob (id 3) must not be occluded by the blob it sits on
+    let not_blob = abs(id - 3.0) > 0.5;
+    let k1 = isect_sphere(ro, dir, vec3<f32>(-0.2, 0.5, -1.8), 0.5);
+    let k2 = isect_sphere(ro, dir, vec3<f32>(0.5, 0.42, -1.6), 0.42);
     let t = hs.x;
-    if ((a.y > 0.0 && a.x < t) || (b.y > 0.0 && b.x < t) || (k.y > 0.0 && k.x < t)) {
+    if ((a.y > 0.0 && a.x < t) || (b.y > 0.0 && b.x < t)
+        || (not_blob && ((k1.y > 0.0 && k1.x < t) || (k2.y > 0.0 && k2.x < t)))) {
       return vec3<f32>(0.0);
     }
   }
@@ -465,7 +474,7 @@ fn indirect(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     alb = alb * 0.5;
   }
   let nq = calc_normal_gi(q);
-  return alb * direct_light_gi(q, nq);
+  return alb * direct_light_gi(q, nq, h.y);
 }
 
 // ---------------------------------------------------------------- integrator
@@ -512,7 +521,7 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
 
     if (m.kind == 0u) {
       if (!pt) {
-        var lo = direct_light(p, nf, 16);
+        var lo = direct_light(p, nf, select(16, MAX_STEPS, abs(h.y - 5.0) < 0.5));
         if (has(F_CAUSTICS)) { lo += caustic(p, nf); }
         if (has(F_GI)) { lo += indirect(p, nf); }
         col += thr * m.albedo * lo;

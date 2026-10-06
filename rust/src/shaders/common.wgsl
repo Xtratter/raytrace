@@ -10,6 +10,7 @@ struct Params {
   sky_kind: u32, history_reset: u32, pad0: u32, pad1: u32,
   col_a: vec3<f32>, pad2: f32,
   col_b: vec3<f32>, pad3: f32,
+  gi_block: u32, gi_floor: f32, pad4: u32, pad5: u32,
 };
 
 const F_SRGB: u32 = 1u;
@@ -21,6 +22,7 @@ const F_CHECKER: u32 = 32u;
 const F_TEMPORAL: u32 = 64u;
 const F_STILL: u32 = 128u;
 const F_MOVED: u32 = 256u;
+const F_GI_SPLIT: u32 = 512u;
 
 // Reads the global uniform `P` (passing the uniform struct by value mis-evaluated flags on the target GPU driver).
 fn has(f: u32) -> bool { return (P.flags & f) != 0u; }

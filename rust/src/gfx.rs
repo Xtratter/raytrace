@@ -6,7 +6,7 @@ use bytemuck::{Pod, Zeroable};
 use ndk::native_window::NativeWindow;
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
-/// Must match `struct Params` in shaders/common.wgsl (176 bytes; std140-compatible, no implicit padding).
+/// Must match `struct Params` in shaders/common.wgsl (192 bytes; std140-compatible, no implicit padding).
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, Default)]
 pub struct GpuParams {
@@ -21,9 +21,10 @@ pub struct GpuParams {
     pub sky_kind: u32, pub history_reset: u32, pub pad0: u32, pub pad1: u32,
     pub col_a: [f32; 3], pub pad2: f32,
     pub col_b: [f32; 3], pub pad3: f32,
+    pub gi_block: u32, pub gi_floor: f32, pub pad4: u32, pub pad5: u32,
 }
 
-const _: () = assert!(std::mem::size_of::<GpuParams>() == 176);
+const _: () = assert!(std::mem::size_of::<GpuParams>() == 192);
 
 #[allow(dead_code)]
 struct Tex { tex: wgpu::Texture, view: wgpu::TextureView }

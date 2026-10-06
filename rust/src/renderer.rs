@@ -82,6 +82,7 @@ impl Renderer {
         if self.gfx.is_srgb() { flags |= flags::SRGB; }
         if still { flags |= flags::STILL; }
         if moved { flags |= flags::MOVED; }
+        flags &= !flags::GI_SPLIT; // enabled in Task 5
         let (ca, cb) = s.light_emission();
         let p = GpuParams {
             res: [rw as f32, rh as f32], out_size: [self.win.0 as f32, self.win.1 as f32],
@@ -93,6 +94,7 @@ impl Renderer {
             sharpen: [0.0, 0.25, 0.5, 0.8][s.get(id::SHARPEN) as usize], hist_floor: s.hist_floor(),
             sky_kind: s.get(id::SKY) as u32, history_reset: self.reset_history as u32, pad0: 0, pad1: 0,
             col_a: ca, pad2: 0.0, col_b: cb, pad3: 0.0,
+            gi_block: 0, gi_floor: 0.15, pad4: 0, pad5: 0, // gi_block = s.gi_block() in Task 5
         };
         let ms = self.gfx.render(&p, s.get(id::DENOISE) as u32, (self.frame & 1) as usize);
         if ms < 0.0 {

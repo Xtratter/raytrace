@@ -1,6 +1,6 @@
 //! Parameter table shared with Kotlin (see ../params.json). Ids are stable; do not renumber.
 
-pub const N: usize = 30;
+pub const N: usize = 31;
 
 #[derive(Clone, Copy)]
 pub struct Def {
@@ -45,6 +45,7 @@ pub const DEFS: [Def; N] = [
     d(27, 1.0, 0.0, 1.0),  // sticks (on-screen sticks visible; Kotlin only)
     d(28, 3.0, 1.0, 5.0),  // move_speed
     d(29, 3.0, 1.0, 5.0),  // look_speed
+    d(30, 1.0, 0.0, 2.0),  // gi_res
 ];
 
 pub mod id {
@@ -58,6 +59,7 @@ pub mod id {
     pub const STRENGTH: usize = 7;
     pub const DENOISE: usize = 8;
     pub const SHARPEN: usize = 9;
+    pub const GI_RES: usize = 30;
     pub const CHECKER: usize = 10;
     pub const SHADOWS: usize = 11;
     pub const GI: usize = 12;
@@ -91,6 +93,7 @@ pub mod flags {
     pub const TEMPORAL: u32 = 64;
     pub const STILL: u32 = 128; // camera + scene unchanged this frame
     pub const MOVED: u32 = 256; // camera moved this frame
+    pub const GI_SPLIT: u32 = 512; // deferred half/quarter-res GI active
 }
 
 pub const SCALES: [f32; 5] = [0.25, 0.33, 0.5, 0.75, 1.0];
@@ -120,7 +123,7 @@ pub fn affects_history(id: usize) -> bool {
     matches!(
         id,
         id::MODE | id::BOUNCES | id::SPP | id::SHADOWS | id::GI | id::CAUSTICS | id::REFLECTIONS
-            | id::LIGHT | id::COL_A | id::COL_B | id::FOV | id::SKY
+            | id::GI_RES | id::LIGHT | id::COL_A | id::COL_B | id::FOV | id::SKY
     )
 }
 
@@ -166,6 +169,16 @@ impl Store {
         self.v[id] > 0.5
     }
 
+    /// Pixels per GI block side: 0 = deferred GI off, 2 = half resolution, 4 = quarter resolution.
+    pub fn gi_block(&self) -> u32 {
+        match self.v[id::GI_RES] as u32 { 0 => 0, 1 => 2, _ => 4 }
+    }
+
+    /// True when GI is computed in the separate half/quarter-res pass (hybrid mode only).
+    pub fn gi_split(&self) -> bool {
+        self.on(id::GI) && self.gi_block() > 0 && self.v[id::MODE] < 0.5
+    }
+
     pub fn flags(&self) -> u32 {
         let mut f = 0;
         let t = self.on(id::TEMPORAL);
@@ -173,6 +186,7 @@ impl Store {
         if self.on(id::GI) { f |= flags::GI; }
         if self.on(id::CAUSTICS) { f |= flags::CAUSTICS; }
         if self.on(id::REFLECTIONS) { f |= flags::REFLECT; }
+        if self.gi_split() { f |= flags::GI_SPLIT; }
         if t { f |= flags::TEMPORAL; }
         if t && self.on(id::CHECKER) { f |= flags::CHECKER; }
         f
@@ -263,7 +277,7 @@ mod tests {
 
     #[test]
     fn new_params_defs_and_history() {
-        assert_eq!(N, 30);
+        assert_eq!(N, 31);
         assert_eq!(id::CAM_MODE, 26);
         assert_eq!(id::STICKS, 27);
         assert_eq!(id::MOVE_SPEED, 28);

@@ -10,6 +10,10 @@ fn join_scene(body: &str) -> String { format!("{}\n{}\n{}", COMMON, SCENE, body)
 pub fn trace() -> String { join_scene(include_str!("shaders/trace.wgsl")) }
 pub fn temporal() -> String { join(include_str!("shaders/temporal.wgsl")) }
 pub fn atrous() -> String { join(include_str!("shaders/atrous.wgsl")) }
+pub fn gi_trace() -> String { join_scene(include_str!("shaders/gi_trace.wgsl")) }
+pub fn gi_temporal() -> String { join(include_str!("shaders/gi_temporal.wgsl")) }
+pub fn gi_atrous() -> String { join(include_str!("shaders/gi_atrous.wgsl")) }
+pub fn composite() -> String { join(include_str!("shaders/composite.wgsl")) }
 pub fn present() -> String { join(include_str!("shaders/present.wgsl")) }
 
 #[cfg(test)]
@@ -29,5 +33,9 @@ mod tests {
         validate("temporal", temporal());
         validate("atrous", atrous());
         validate("present", present());
+        validate("gi_trace", gi_trace());
+        validate("gi_temporal", gi_temporal());
+        validate("gi_atrous", gi_atrous());
+        validate("composite", composite());
     }
 }

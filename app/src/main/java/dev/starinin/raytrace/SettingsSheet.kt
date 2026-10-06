@@ -31,6 +31,8 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
     /** True while a hide animation runs: the sheet already counts as closed (the gear toggles correctly). */
     private var closing = false
     val isOpen get() = visibility == VISIBLE && !closing
+    /** True during the hide animation (panel still visible, sliding out). */
+    val isClosing get() = closing
 
     private val tabs get() = listOf(t("Quality", "Качество"), t("Smoothing", "Сглаживание"), t("Light", "Свет"), t("Scene", "Сцена"), t("App", "Прил."))
 

@@ -80,7 +80,10 @@ class MainActivity : Activity() {
     override fun onResume() { super.onResume(); handler.post(tick) }
     override fun onPause() { handler.removeCallbacks(tick); super.onPause() }
     @Deprecated("Deprecated in Java")
-    override fun onBackPressed() { if (sheet.isOpen) sheet.hide() else super.onBackPressed() }
+    override fun onBackPressed() {
+        if (sheet.isClosing) return   // back during the hide animation must not exit the app
+        if (sheet.isOpen) sheet.hide() else super.onBackPressed()
+    }
 
     override fun onWindowFocusChanged(f: Boolean) {
         super.onWindowFocusChanged(f)

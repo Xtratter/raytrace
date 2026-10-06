@@ -80,3 +80,17 @@ fn sanitize(c: vec3<f32>) -> vec3<f32> {
   if (is_nan(c.x) || is_nan(c.y) || is_nan(c.z) || any(c != c) || any(abs(c) > vec3<f32>(1e4))) { return vec3<f32>(0.0); }
   return c;
 }
+
+fn pcg(v: u32) -> u32 {
+  let s = v * 747796405u + 2891336453u;
+  let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+  return (w >> 22u) ^ w;
+}
+
+// Which pixel of the bs x bs block (gx, gy) a GI pass samples this frame (mirrors gi::block_offset).
+fn block_offset(gx: u32, gy: u32, frame: u32, bs: u32) -> vec2<u32> {
+  let n = bs * bs;
+  let h = pcg(gx * 73856093u ^ gy * 19349663u);
+  let k = (frame + h) % n;
+  return vec2<u32>(k % bs, k / bs);
+}

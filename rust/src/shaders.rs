@@ -2,10 +2,12 @@
 //! (CI) can validate all shaders with naga without a GPU.
 
 const COMMON: &str = include_str!("shaders/common.wgsl");
+const SCENE: &str = include_str!("shaders/scene.wgsl");
 
 fn join(body: &str) -> String { format!("{}\n{}", COMMON, body) }
+fn join_scene(body: &str) -> String { format!("{}\n{}\n{}", COMMON, SCENE, body) }
 
-pub fn trace() -> String { join(include_str!("shaders/trace.wgsl")) }
+pub fn trace() -> String { join_scene(include_str!("shaders/trace.wgsl")) }
 pub fn temporal() -> String { join(include_str!("shaders/temporal.wgsl")) }
 pub fn atrous() -> String { join(include_str!("shaders/atrous.wgsl")) }
 pub fn present() -> String { join(include_str!("shaders/present.wgsl")) }

@@ -22,7 +22,8 @@ const F_TEMPORAL: u32 = 64u;
 const F_STILL: u32 = 128u;
 const F_MOVED: u32 = 256u;
 
-fn has(P: Params, f: u32) -> bool { return (P.flags & f) != 0u; }
+// Reads the global uniform `P` (passing the uniform struct by value mis-evaluated flags on the target GPU driver).
+fn has(f: u32) -> bool { return (P.flags & f) != 0u; }
 
 fn cam_scale(res: vec2<f32>, fov: f32) -> vec2<f32> {
   let th = tan(fov * 0.5);

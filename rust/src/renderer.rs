@@ -99,7 +99,7 @@ impl Renderer {
                 let fps = self.fps_n as f32 / el;
                 *self.stats.lock().unwrap() = [fps, ms, rw as f32, rh as f32, scale, pt as u32 as f32, 0.0, 0.0];
                 if self.log_t.elapsed().as_secs_f32() >= 2.0 {
-                    log::info!("{:.1} fps | gpu {:.1} ms | {}x{} ({:.2}x) | {}", fps, ms, rw, rh, scale, if pt { "path" } else { "hybrid" });
+                    log::info!("{:.1} fps | gpu {:.1} ms | {}x{} ({:.2}x) | {} | flags {:#x} | bounces {}", fps, ms, rw, rh, scale, if pt { "path" } else { "hybrid" }, flags, s.get(id::BOUNCES));
                     self.log_t = Instant::now();
                 }
                 self.fps_n = 0;

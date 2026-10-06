@@ -12,6 +12,7 @@ var<private> g_id: f32;
 
 const PI: f32 = 3.14159265;
 const MAX_STEPS: i32 = 72;
+const GI_STEPS: i32 = 24;
 
 const MIRROR_C: vec3<f32> = vec3<f32>(-1.8, 1.0, 0.2);
 const GLASS_C: vec3<f32> = vec3<f32>(1.2, 0.8, 1.0);
@@ -145,6 +146,26 @@ fn map(p: vec3<f32>) -> vec2<f32> {
   return r;
 }
 
+// cheaper scene for GI / secondary rays: Menger sponge replaced by its bounding box
+fn map_gi(p: vec3<f32>) -> vec2<f32> {
+  var r = vec2<f32>(p.y, 0.0);
+  r = opU(r, p.z + 7.0, 6.0);
+  r = opU(r, p.x + 6.0, 7.0);
+  r = opU(r, 6.0 - p.x, 8.0);
+  r = opU(r, length(p - MIRROR_C) - 1.0, 1.0);
+  r = opU(r, length(p - GLASS_C) - GLASS_R, 2.0);
+  let b1 = length(p - vec3<f32>(-0.2, 0.5, -1.8)) - 0.5;
+  let b2 = length(p - vec3<f32>(0.5, 0.42, -1.6)) - 0.42;
+  r = opU(r, smin(b1, b2, 0.35), 3.0);
+  let tq = p - vec3<f32>(3.1, 0.3, -0.6);
+  let tb = length(tq) - 1.25;
+  r = opU(r, select(sd_torus(tq, vec2<f32>(0.85, 0.3)), tb, tb > 0.15), 4.0);
+  r = opU(r, sd_box((p - vec3<f32>(-0.4, 1.1, -4.2)) * (1.0 / 1.1), vec3<f32>(1.0)) * 1.1, 5.0);
+  r = opU(r, length(p - LA_C) - LA_R, 9.0);
+  r = opU(r, length(p - LB_C) - LB_R, 10.0);
+  return r;
+}
+
 fn calc_normal(p: vec3<f32>) -> vec3<f32> {
   let e = vec2<f32>(1.0, -1.0) * 0.0007;
   return normalize(
@@ -157,9 +178,31 @@ fn calc_normal(p: vec3<f32>) -> vec3<f32> {
 
 // sgn = -1 marches from inside a solid. returns (t, id, hit)
 fn march(ro: vec3<f32>, rd: vec3<f32>, sgn: f32, tmax: f32) -> vec3<f32> {
+  return march_n(ro, rd, sgn, tmax, MAX_STEPS);
+}
+
+// same, with a step budget (cheap secondary rays for GI)
+fn march_n(ro: vec3<f32>, rd: vec3<f32>, sgn: f32, tmax: f32, steps: i32) -> vec3<f32> {
   var t = 0.0;
-  for (var i = 0; i < MAX_STEPS; i = i + 1) {
+  for (var i = 0; i < steps; i = i + 1) {
     let h = map(ro + rd * t);
+    let d = h.x * sgn;
+    if (d < 0.0005 * (1.0 + t)) {
+      return vec3<f32>(t, h.y, 1.0);
+    }
+    t = t + d;
+    if (t > tmax) {
+      break;
+    }
+  }
+  return vec3<f32>(tmax, -1.0, 0.0);
+}
+
+// GI variant: step budget + cheaper scene
+fn march_gi(ro: vec3<f32>, rd: vec3<f32>, sgn: f32, tmax: f32, steps: i32) -> vec3<f32> {
+  var t = 0.0;
+  for (var i = 0; i < steps; i = i + 1) {
+    let h = map_gi(ro + rd * t);
     let d = h.x * sgn;
     if (d < 0.0005 * (1.0 + t)) {
       return vec3<f32>(t, h.y, 1.0);
@@ -275,7 +318,7 @@ fn isect_sphere(ro: vec3<f32>, rd: vec3<f32>, c: vec3<f32>, r: f32) -> vec2<f32>
 
 // Next-event estimation: returns E/pi (multiply by albedo). Glass is opaque for shadows,
 // light passing through it is handled by caustic() (hybrid) or BSDF paths (path tracing).
-fn direct_light(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
+fn direct_light(p: vec3<f32>, n: vec3<f32>, steps: i32) -> vec3<f32> {
   let li = select(0u, 1u, rnd() < 0.5);
   let c = light_c(li);
   let r = light_r(li);
@@ -295,8 +338,9 @@ fn direct_light(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
   if (hs.x < 0.0) {
     return vec3<f32>(0.0);
   }
-  if (has(P, F_SHADOWS)) {
-    let sh = march(ro, dir, 1.0, hs.x - 0.01);
+  if (has(F_SHADOWS)) {
+    var sh: vec3<f32>;
+    if (steps < MAX_STEPS) { sh = march_gi(ro, dir, 1.0, hs.x - 0.01, steps); } else { sh = march(ro, dir, 1.0, hs.x - 0.01); }
     if (sh.z > 0.5) {
       return vec3<f32>(0.0);
     }
@@ -354,7 +398,7 @@ fn caustic(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
 fn indirect(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
   let d = cos_hemi(n);
   let ro = p + n * 0.004;
-  let h = march(ro, d, 1.0, 14.0);
+  let h = march_gi(ro, d, 1.0, 14.0, GI_STEPS);
   if (h.z < 0.5) {
     return sky(d);
   }
@@ -371,7 +415,7 @@ fn indirect(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     alb = alb * 0.5;
   }
   let nq = calc_normal(q);
-  return alb * direct_light(q, nq);
+  return alb * direct_light(q, nq, GI_STEPS);
 }
 
 // ---------------------------------------------------------------- integrator
@@ -397,7 +441,7 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
     let p = ro + rd * h.x;
     var m = material(p, h.y);
     if (b == 0) { g_depth = h.x; g_id = h.y; g_n = -rd; }
-    if (!has(P, F_REFLECT) && m.kind != 0u) {
+    if (!has(F_REFLECT) && m.kind != 0u) {
       if (m.kind == 2u) { m.albedo = vec3<f32>(0.7, 0.8, 0.9); }
       m.kind = 0u;
       m.rough = 0.0;
@@ -417,14 +461,14 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
 
     if (m.kind == 0u) {
       if (!pt) {
-        var lo = direct_light(p, nf);
-        if (has(P, F_CAUSTICS)) { lo += caustic(p, nf); }
-        if (has(P, F_GI)) { lo += indirect(p, nf); }
+        var lo = direct_light(p, nf, MAX_STEPS);
+        if (has(F_CAUSTICS)) { lo += caustic(p, nf); }
+        if (has(F_GI)) { lo += indirect(p, nf); }
         col += thr * m.albedo * lo;
         break;
       }
-      col += thr * m.albedo * direct_light(p, nf);
-      if (!has(P, F_GI)) { break; }
+      col += thr * m.albedo * direct_light(p, nf, MAX_STEPS);
+      if (!has(F_GI)) { break; }
       diff_seen = true;
       thr = thr * m.albedo;
       ro = p + nf * 0.003;
@@ -450,7 +494,7 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
       rd = r;
       spec = true;
     } else {
-      if (diff_seen && !has(P, F_CAUSTICS)) { break; }
+      if (diff_seen && !has(F_CAUSTICS)) { break; }
       let cosi = clamp(-dot(rd, nf), 0.0, 1.0);
       let eta = select(1.5, 1.0 / 1.5, front);
       let rr = refract(rd, nf, eta);
@@ -506,7 +550,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   var col = vec3<f32>(0.0);
   var traced = 1.0;
-  let skip = has(P, F_CHECKER) && (((gid.x + gid.y + P.frame) & 1u) == 1u);
+  let skip = has(F_CHECKER) && (((gid.x + gid.y + P.frame) & 1u) == 1u);
   if (skip) {
     // visibility only: gbuffer for reprojection, no shading
     let rd = cam_ray(pix + vec2<f32>(0.5) + P.jitter, P.res, P.cam_pos, P.cam_target, P.fov);

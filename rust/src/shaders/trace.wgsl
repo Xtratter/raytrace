@@ -355,7 +355,7 @@ fn direct_light(p: vec3<f32>, n: vec3<f32>, steps: i32) -> vec3<f32> {
   }
   if (has(F_SHADOWS)) {
     var sh: vec3<f32>;
-    if (steps < MAX_STEPS) { sh = march_n(ro, dir, 1.0, hs.x - 0.01, steps); } else { sh = march(ro, dir, 1.0, hs.x - 0.01); }
+    if (steps < MAX_STEPS) { sh = march_gi(ro, dir, 1.0, hs.x - 0.01, steps); } else { sh = march(ro, dir, 1.0, hs.x - 0.01); }
     if (sh.z > 0.5) {
       return vec3<f32>(0.0);
     }
@@ -510,7 +510,7 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
 
     if (m.kind == 0u) {
       if (!pt) {
-        var lo = direct_light(p, nf, 40);
+        var lo = direct_light(p, nf, 16);
         if (has(F_CAUSTICS)) { lo += caustic(p, nf); }
         if (has(F_GI)) { lo += indirect(p, nf); }
         col += thr * m.albedo * lo;

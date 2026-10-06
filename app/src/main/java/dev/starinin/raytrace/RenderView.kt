@@ -5,6 +5,8 @@ import android.view.*
 
 class RenderView(ctx: Context, private val settings: Settings) : SurfaceView(ctx), SurfaceHolder.Callback {
     private var lastX = 0f; private var lastY = 0f; private var fingers = 0
+    /** The engine runs on the current surface (started on its first surfaceChanged, stopped on surfaceDestroyed). */
+    private var running = false
     private val pinch = ScaleGestureDetector(ctx, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(d: ScaleGestureDetector): Boolean { Native.zoom(1f / d.scaleFactor); return true }
     })
@@ -14,12 +16,14 @@ class RenderView(ctx: Context, private val settings: Settings) : SurfaceView(ctx
 
     init { holder.addCallback(this) }
 
-    override fun surfaceCreated(h: SurfaceHolder) {}
+    override fun surfaceCreated(h: SurfaceHolder) { running = false }
     override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) {
-        Native.start(h.surface, w, hh)   // restarts the engine; cheap enough on size change
+        if (running) { Native.resize(w, hh); return }   // same surface, new size: keep the engine and the camera
+        Native.start(h.surface, w, hh)
         settings.pushAll()
+        running = true
     }
-    override fun surfaceDestroyed(h: SurfaceHolder) { Native.stop() }
+    override fun surfaceDestroyed(h: SurfaceHolder) { Native.stop(); running = false }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         pinch.onTouchEvent(e); taps.onTouchEvent(e)

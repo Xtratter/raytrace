@@ -14,6 +14,9 @@ class MainActivity : Activity() {
             override fun getFloat(k: String, d: Float) = sp.getFloat(k, d)
             override fun putFloat(k: String, v: Float) { sp.edit().putFloat(k, v).apply() }
         }) { id, v -> Native.setParam(id, v) }
+        intent.getStringExtra("dbg")?.split(',')?.forEach {
+            val (i, v) = it.split('='); settings.set(i.toInt(), v.toFloat())
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(RenderView(this, settings))
     }

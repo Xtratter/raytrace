@@ -6,9 +6,9 @@ import org.junit.Test
 class PresetsTest {
     private fun s() = Settings(FakeKv()) { _, _ -> }
 
-    @Test fun performanceUsesLowScaleAndCheckerboard() {
+    @Test fun performanceUsesLowScaleWithoutGi() {
         val st = s(); Presets.apply(st, 0)
-        assertEquals(0f, st.get(Ids.SCALE_IDX)); assertEquals(1f, st.get(Ids.CHECKER))
+        assertEquals(0f, st.get(Ids.SCALE_IDX)); assertEquals(0f, st.get(Ids.CHECKER))
         assertEquals(0f, st.get(Ids.GI)); assertEquals(0f, st.get(Ids.PRESET))
     }
 

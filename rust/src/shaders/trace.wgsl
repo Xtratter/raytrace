@@ -9,6 +9,7 @@
 var<private> g_depth: f32;
 var<private> g_n: vec3<f32>;
 var<private> g_id: f32;
+var<private> g_skip: bool; // checkerboard: pixel only fills the g-buffer
 
 const PI: f32 = 3.14159265;
 const MAX_STEPS: i32 = 72;
@@ -505,6 +506,7 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
 
     let n = calc_normal(p);
     if (b == 0) { g_n = n; }
+    if (g_skip) { break; }
     let front = dot(rd, n) < 0.0;
     let nf = select(-n, n, front);
 
@@ -577,7 +579,7 @@ fn clamp_lum(c: vec3<f32>, m: f32) -> vec3<f32> {
 fn shade_pixel(pix: vec2<f32>) -> vec3<f32> {
   let rd = cam_ray(pix + vec2<f32>(0.5) + P.jitter, P.res, P.cam_pos, P.cam_target, P.fov);
   var sum = vec3<f32>(0.0);
-  let n = max(P.spp, 1u);
+  let n = select(max(P.spp, 1u), 1u, g_skip);
   for (var s = 0u; s < n; s = s + 1u) {
     var c = trace(P.cam_pos, rd);
     if (any(c != c)) { c = vec3<f32>(0.0); }
@@ -600,20 +602,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var col = vec3<f32>(0.0);
   var traced = 1.0;
   let skip = has(F_CHECKER) && (((gid.x + gid.y + P.frame) & 1u) == 1u);
-  if (skip) {
-    // visibility only: gbuffer for reprojection, no shading
-    let rd = cam_ray(pix + vec2<f32>(0.5) + P.jitter, P.res, P.cam_pos, P.cam_target, P.fov);
-    let hh = march(P.cam_pos, rd, 1.0, 60.0);
-    if (hh.z > 0.5) {
-      let p = P.cam_pos + rd * hh.x;
-      g_depth = hh.x; g_id = hh.y; g_n = calc_normal(p);
-    } else {
-      g_depth = 60.0; g_id = -1.0; g_n = -rd;
-    }
-    traced = 0.0;
-  } else {
-    col = shade_pixel(pix);
-  }
+  g_skip = skip;
+  col = shade_pixel(pix); // for skipped pixels trace() stops after the primary hit (g-buffer only)
+  if (skip) { col = vec3<f32>(0.0); traced = 0.0; }
   textureStore(out_rad, ip, vec4<f32>(col, traced));
   textureStore(out_g, ip, vec4<f32>(g_depth, oct_encode(g_n), g_id));
 }

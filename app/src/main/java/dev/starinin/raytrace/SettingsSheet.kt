@@ -28,7 +28,9 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
     var tab = 0; private set
     /** Nearly opaque: text stays readable over a bright scene. */
     private val fill = M3.withAlpha(M3.surface, 0.94f)
-    val isOpen get() = visibility == VISIBLE
+    /** True while a hide animation runs: the sheet already counts as closed (the gear toggles correctly). */
+    private var closing = false
+    val isOpen get() = visibility == VISIBLE && !closing
 
     private val tabs get() = listOf(t("Quality", "Качество"), t("Smoothing", "Сглаживание"), t("Light", "Свет"), t("Scene", "Сцена"), t("App", "Прил."))
 
@@ -63,15 +65,25 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
         return super.dispatchTouchEvent(e)
     }
 
+    /** Opens fully; called during a hide animation it cancels the hide and slides back up from where the panel is. */
     fun show(animate: Boolean = true) {
+        val wasClosed = visibility != VISIBLE
+        closing = false
+        panel.animate().cancel()   // drops a pending hide; its end action also checks [closing]
         visibility = VISIBLE
         if (!animate) { panel.translationY = 0f; return }
-        panel.translationY = px(400f).toFloat(); panel.animate().translationY(0f).setDuration(220).start()
+        if (wasClosed) panel.translationY = px(400f).toFloat()
+        panel.animate().translationY(0f).setDuration(220).withEndAction(null).start()
         Haptics.play(Haptics.Kind.OPEN)
     }
 
+    /** No-op when already closed or closing. */
     fun hide() {
-        panel.animate().translationY(px(400f).toFloat()).setDuration(180).withEndAction { visibility = GONE }.start()
+        if (!isOpen) return
+        closing = true
+        panel.animate().cancel()
+        panel.animate().translationY(px(400f).toFloat()).setDuration(180)
+            .withEndAction { if (closing) { closing = false; visibility = GONE } }.start()
         Haptics.play(Haptics.Kind.CLOSE)
     }
 

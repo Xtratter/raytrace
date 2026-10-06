@@ -35,4 +35,11 @@ class PresetsTest {
         val st = s(); Presets.apply(st, 1)
         for (d in Settings.DEFS) if (d.id in Presets.CONTROLLED) assertEquals(d.key, d.default, st.get(d.id))
     }
+
+    @Test fun outOfRangeIndexIsNoOp() {
+        val st = s(); Presets.apply(st, 0); st.set(Ids.BOUNCES, 7f)
+        val before = Settings.DEFS.associate { it.id to st.get(it.id) }
+        for (i in listOf(-1, 3, 99)) Presets.apply(st, i)
+        for (d in Settings.DEFS) assertEquals(d.key, before[d.id], st.get(d.id))
+    }
 }

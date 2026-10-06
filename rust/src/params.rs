@@ -59,7 +59,6 @@ pub mod id {
     pub const STRENGTH: usize = 7;
     pub const DENOISE: usize = 8;
     pub const SHARPEN: usize = 9;
-    pub const GI_RES: usize = 30;
     pub const CHECKER: usize = 10;
     pub const SHADOWS: usize = 11;
     pub const GI: usize = 12;
@@ -80,6 +79,7 @@ pub mod id {
     pub const STICKS: usize = 27;
     pub const MOVE_SPEED: usize = 28;
     pub const LOOK_SPEED: usize = 29;
+    pub const GI_RES: usize = 30;
 }
 
 /// Bits of `Params.flags` (mirrored in common.wgsl).
@@ -293,5 +293,29 @@ mod tests {
         let (a, b) = s.light_emission();
         assert_eq!(a, [45.0, 38.0, 28.0]); // default light=3 -> k=1.0
         assert_eq!(b, [10.0, 20.0, 45.0]);
+    }
+
+    #[test]
+    fn gi_res_param_and_flags() {
+        let mut s = Store::new();
+        assert_eq!(s.get(id::GI_RES), 1.0);
+        assert_eq!(s.gi_block(), 2);
+        assert!(s.gi_split());
+        assert_ne!(s.flags() & flags::GI_SPLIT, 0);
+        s.set(id::GI_RES as i32, 2.0);
+        assert_eq!(s.gi_block(), 4);
+        s.set(id::GI_RES as i32, 0.0);
+        assert_eq!(s.gi_block(), 0);
+        assert!(!s.gi_split());
+        assert_eq!(s.flags() & flags::GI_SPLIT, 0);
+        s.set(id::GI_RES as i32, 1.0);
+        s.set(id::GI as i32, 0.0); // GI off -> no deferred GI
+        assert!(!s.gi_split());
+        s.set(id::GI as i32, 1.0);
+        s.set(id::MODE as i32, 1.0); // path tracing keeps inline GI
+        assert!(!s.gi_split());
+        assert!(affects_history(id::GI_RES));
+        assert_eq!(s.set(id::GI_RES as i32, 99.0), Change::Changed);
+        assert_eq!(s.get(id::GI_RES), 2.0);
     }
 }

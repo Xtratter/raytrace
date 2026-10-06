@@ -40,13 +40,15 @@ mod tests {
         for bs in [2u32, 4] {
             let n = bs * bs;
             for (gx, gy) in [(0u32, 0u32), (1, 0), (0, 1), (37, 91), (65535, 1)] {
-                let mut seen = vec![false; n as usize];
-                for f in 0..n {
-                    let (ox, oy) = block_offset(gx, gy, 1000 + f, bs);
-                    assert!(ox < bs && oy < bs);
-                    seen[(oy * bs + ox) as usize] = true;
+                for start in [0u32, 1000, u32::MAX - 1, u32::MAX - n + 1, 12345] {
+                    let mut seen = vec![false; n as usize];
+                    for f in 0..n {
+                        let (ox, oy) = block_offset(gx, gy, start.wrapping_add(f), bs);
+                        assert!(ox < bs && oy < bs);
+                        seen[(oy * bs + ox) as usize] = true;
+                    }
+                    assert!(seen.iter().all(|&s| s), "bs {bs} block ({gx},{gy}) start {start} missed an offset");
                 }
-                assert!(seen.iter().all(|&s| s), "bs {bs} block ({gx},{gy}) missed an offset");
             }
         }
     }

@@ -17,3 +17,18 @@
   - light (12=0 13=0 14=0 11=0): target 30 -> settles 0.49x (520x1168), 36 fps / gpu 26.4 ms (15% headroom design); target 60 -> 0.32x (344x760), 70 fps / gpu 13.2 ms. Stable, one transition each.
   - frame limit (light, 0.25x, adaptive off): 25=0 100 fps, 25=1 99 fps (GPU-bound ~9 ms, display 120 Hz, so no visible difference); 0.33x: 67 fps either way.
   - extremes: 1=0,2=1: 99-100 fps; 1=4,2=0: 1.1 fps; no crash. Landscape rotation (2400x1080): surface reconfigured, rendering continues (75 fps, 0.29x), no panic.
+- task 10 perf tuning (352x792 = 0.33x fixed, hybrid, all features, 6=1 8=1, still): before 9.0 fps / 108 ms -> GI hit lit with analytic sphere shadows + map_gi normal 16.2 fps / 60 ms -> GI_STEPS 12 / range 10 (+grey instead of sky for exhausted rays) -> primary shadow rays on map_gi (box instead of Menger), 16 steps. Feature costs at 0.25x after: shadows were ~12 ms (dominant once GI was cheap), reflections ~1 ms, GI ~12 ms.
+- checkerboard fix: skipped pixels used a duplicated march+normal path; the shader grew and ran ~3x slower with checker on (42 ms vs 15 ms at 0.25x). Now they share shade_pixel/trace and stop after the primary hit: 11 ms. Checker still looks grainier (half the samples), so Performance keeps it off.
+- auto-orbit (19=1/2) had not been device-checked before task 10; checked once (19=2, two screenshots 3 s apart differ, camera swings, no errors).
+- Final benchmark (pm clear, fresh process, 12 s, last log line; scale is the adaptive result unless noted; 19=0 still / 19=2 orbit):
+
+| preset | mode | still gpu ms / fps / scale | orbit fps |
+|---|---|---|---|
+| Performance | hybrid | 12.0 / 79 / 0.25 | 80 |
+| Performance | path | 23.9 / 41 / 0.25 | 39 |
+| Balanced | hybrid | 25.0 / 40 / 0.25 | 40 |
+| Balanced | path | 182 / 5.5 / 0.25 | 5.4 |
+| Quality (0.5x fixed, spp 2, bounces 9) | hybrid | 164 / 6.0 / 0.50 | 6.1 |
+| Quality | path | 1674 / 0.6 / 0.50 | 0.6 |
+
+  Before (task 8/6): Balanced hybrid ~15 fps at the 0.25 floor, 9 fps at 0.33x fixed; Performance preset (with checker) 12.7 fps at 0.25 after the GI work alone (checker slowdown), path 0.9 fps. Balanced stays at the 0.25 adaptive floor; at fixed 0.33x it is ~17 fps / 58 ms (acceptance of 30 fps at 0.33x is NOT met; met at 0.25x). Balanced 60 s auto-orbit: 34-40 fps throughout, no drift, no FATAL/panic/ANR. Quality guard: green tint on floor/spheres and orange on the right remain visible; trade-offs: Menger casts a box-shaped shadow on the primary hit, GI hits use sphere-approximated shadows, blue speckle on the Menger remains.

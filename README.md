@@ -113,22 +113,28 @@ export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
 
 ## Benchmarks
 
-Measured on a **POCO F3 (Adreno 650)**, 120 Hz display, 1080x2400. Fresh process, 12 s, last log line; the scale is what the adaptive controller settled on
-(Quality uses a fixed 0.5x). Details and history are in [docs/bench.md](docs/bench.md).
-These figures predate the exact-march Menger shadow fix and will be re-measured before release.
+Measured on a **POCO F3 (Adreno 650)**, 120 Hz display, 1080x2400. Details and history are in [docs/bench.md](docs/bench.md).
+
+**Final check (06.10.2026, release build, clean defaults):** Balanced preset, hybrid, adaptive target 60 at the 0.25x floor (264x600 render size) reaches
+**about 22 fps (GPU 42-44 ms)**, repeated on several runs. The 30 fps target was **not** met. A debug build with a fixed camera and animation off
+measured 17.7 fps / 55 ms in the same session. GPU clock and thermal state shift results by roughly 25% between sessions.
+
+The table below comes from **earlier development runs** (cooler device, debug overrides, before the exact-march Menger shadow fix) and was **not re-measured**
+in the final check; treat it as approximate. In particular, an earlier Balanced figure of about 40 fps / 25 ms could not be reproduced on clean defaults.
 
 | Preset | Mode | GPU ms | fps | Render scale |
 |---|---|---:|---:|---:|
-| Performance | hybrid | 12.0 | 79 | 0.25 |
-| Performance | path tracing | 23.9 | 41 | 0.25 |
-| Balanced | hybrid | 25.0 | 40 | 0.25 |
-| Balanced | path tracing | 182 | 5.5 | 0.25 |
-| Quality (spp 2, 9 bounces) | hybrid | 164 | 6.0 | 0.50 |
-| Quality | path tracing | 1674 | 0.6 | 0.50 |
+| Performance | hybrid | ~12 | ~79 | 0.25 |
+| Performance | path tracing | ~24 | ~41 | 0.25 |
+| Balanced | hybrid | 42-44 (final check) | ~22 (final check) | 0.25 |
+| Balanced | path tracing | ~182 | ~5.5 | 0.25 |
+| Quality (spp 2, 9 bounces) | hybrid | ~164 | ~6.0 | 0.50 |
+| Quality | path tracing | ~1674 | ~0.6 | 0.50 |
 
-For comparison, the prototype this app grew out of ran at **7.1 fps** (0.33x, hybrid). At a fixed 0.33x the Balanced hybrid mode went from
-9.0 fps to 17 fps; the prototype-era path tracing run was 0.9 fps and is now 5.5 fps. Path tracing is a **progressive** mode (about 5 fps at the
-0.25x floor in Balanced), meant for a still camera. Balanced does not reach 30 fps at a fixed 0.33x; it does at 0.25x.
+For comparison, the prototype this app grew out of ran at **7.1 fps** (356x767, 0.33x, hybrid). On clean defaults Balanced is therefore about 3x faster
+(22.5 vs 7.1 fps), at a lower internal resolution (0.25x vs 0.33x) but with better image quality (temporal reprojection, denoiser). Path tracing is a
+**progressive** mode, meant for a still camera. The safety governor scales heavy settings down automatically. The Menger-sponge shadow step budget
+(`MENGER_SHADOW_STEPS = 24`) and the exact-march variant made no measurable difference in the final check (22.4 vs 22.5 fps).
 
 ## Known limitations
 

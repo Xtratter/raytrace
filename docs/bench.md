@@ -1,7 +1,7 @@
 # Bench
 
 - prototype hybrid 0.33x: 7.1 fps | render 356x767 | hybrid (steady state, last log lines 6.4-7.2 fps)
-- task 5 hybrid 0.33x (dbg 6=0,8=0,2=0): 88.9-95.2 fps | gpu 9.6-10.0 ms | render 352x792 | hybrid (~13x the prototype's 7.1 fps; caveat: prototype was 356x767 with accumulation shader, different pass structure)
+- task 5 hybrid 0.33x (dbg 6=0,8=0,2=0): 88.9-95.2 fps | gpu 9.6-10.0 ms | render 352x792 | hybrid (SUPERSEDED, invalid, see CORRECTION below; caveat: prototype was 356x767 with accumulation shader, different pass structure)
 - flag toggles (anim off, 6=0,8=0,2=0): default 93.2 fps / 9.9 ms; 14=0 93.7 / 10.2; 12=0 93.0 / 9.7; 13=0 93.1 / 9.8; 23=2 85.5 / 10.4; 11=0 85.4 / 11.1 (single last-line samples, noisy)
 - CORRECTION (task 5 fix): the 88-95 fps figure above was invalid. `has(P, F_*)` (uniform struct passed by value) evaluated wrong on the phone GPU, so reflections/GI/caustics/shadows were effectively off. Fixed (`has(f)` reads the global P). Real numbers, 352x792 hybrid, spp 1, bounces 6, 6=0 8=0 2=0:
   - all features, GI march 72 steps: 3.3 fps | gpu 303 ms (below the 7.1 baseline)
@@ -34,4 +34,16 @@
   Before/after (task 10; still, hybrid unless noted; "before" = task 6/8 measurements, which used different scales, so only same-row comparisons are meaningful): Balanced adaptive: ~15 fps -> 40 fps (table above, 0.25x floor); Balanced fixed 0.33x: 9.0 fps / 108 ms -> 17 fps / 58 ms; Performance (checker preset): 12.7 fps -> 79 fps (checker off in the final preset); Balanced path: 0.9 fps (0.33x, prototype era) -> 5.5 fps (0.25x). Balanced stays at the 0.25 adaptive floor; the 30 fps acceptance is NOT met at fixed 0.33x, met at 0.25x. Balanced 60 s auto-orbit: 34-40 fps throughout, no drift, no FATAL/panic/ANR. Quality guard: green tint on floor/spheres and orange on the right remain visible; trade-offs: GI hits use sphere-approximated shadows (mirror, glass, two blobs), blue speckle on the Menger remains.
 - fix round 1 (review, host-side only): primary shadow rays for Menger hits (id 5) use the exact map (the map_gi proxy box used to shadow the sponge's own surface, black recessed faces); GI-hit shadows use the two real blob spheres (a blob hit skips them). The perf/visual re-measurement on device for these changes is PENDING (device busy). An earlier experiment recorded 71 ms vs 41 ms at fixed 0.33x for an exact-map Menger shadow (divergence); re-check that cost.
 - Known issue, NOT investigated: dotted lines along the room wall edges.
-- Perf note: after the exact-march fix the on-device Balanced default measured 22.5 fps / 43 ms at 0.25x (vs 40 fps / 25 ms before); the re-measurement with the 24-step Menger shadow budget is pending (controller will fill in).
+- Note: the Final benchmark table above and the "40 fps" Balanced figures were measured during development under different (cooler / debug-override) conditions and could not be reproduced on clean defaults; see the final check below.
+
+## Final check (06.10.2026)
+
+POCO F3 (Adreno 650), 18:21-18:25, release build, clean defaults: Balanced preset, hybrid, adaptive target 60 at the 0.25x floor, render size 264x600.
+- Measured 22-23 fps / GPU 42-44 ms, repeated on several runs (the 30 fps target was NOT met).
+- Debug build, fixed camera, animation off, same session: 17.7 fps / 55 ms.
+- GPU clock / thermal state changes results by roughly 25% between sessions.
+- The earlier Balanced figure of about 40 fps / 25 ms (0.25x) could NOT be reproduced on clean defaults; it was measured during development under different (cooler / debug-override) conditions. Performance, Quality and path-tracing numbers above are from those development runs and were not re-measured; treat them as approximate.
+- Menger-sponge shadow step budget (MENGER_SHADOW_STEPS = 24) vs the exact-march variant: no measurable difference (22.4 vs 22.5 fps).
+- Comparison with the prototype (7.1 fps, 356x767, hybrid, before any changes): about 3x on clean defaults (22.5 vs 7.1) at a lower internal resolution (0.25x vs 0.33x) with better image quality (temporal reprojection, denoiser). The earlier 13x / 90+ fps claims are withdrawn.
+- A safety governor scales heavy settings down automatically when a frame takes more than ~1.2 s.
+

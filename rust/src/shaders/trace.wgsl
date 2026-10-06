@@ -12,6 +12,11 @@ var<private> g_id: f32;
 
 const PI: f32 = 3.14159265;
 const MAX_STEPS: i32 = 72;
+// GI rays: one cosine-weighted bounce marched in map_gi (Menger -> its bounding box) with a small
+// step budget. 24 steps covers the room at grazing angles well enough; fewer leaves visible dark
+// speckle near edges. A ray that runs out of steps is not sky: it contributes a conservative
+// half-sky estimate (no light leakage, no black holes). The GI hit's own light uses analytic
+// sphere shadows instead of a second march (see direct_light_gi).
 const GI_STEPS: i32 = 24;
 
 const MIRROR_C: vec3<f32> = vec3<f32>(-1.8, 1.0, 0.2);
@@ -209,10 +214,20 @@ fn march_gi(ro: vec3<f32>, rd: vec3<f32>, sgn: f32, tmax: f32, steps: i32) -> ve
     }
     t = t + d;
     if (t > tmax) {
-      break;
+      return vec3<f32>(tmax, -1.0, 0.0);
     }
   }
-  return vec3<f32>(tmax, -1.0, 0.0);
+  return vec3<f32>(t, -1.0, 0.25); // step budget exhausted (not a clean miss)
+}
+
+fn calc_normal_gi(p: vec3<f32>) -> vec3<f32> {
+  let e = vec2<f32>(1.0, -1.0) * 0.002;
+  return normalize(
+    e.xyy * map_gi(p + e.xyy).x +
+    e.yyx * map_gi(p + e.yyx).x +
+    e.yxy * map_gi(p + e.yxy).x +
+    e.xxx * map_gi(p + e.xxx).x
+  );
 }
 
 // ---------------------------------------------------------------- materials
@@ -394,13 +409,46 @@ fn caustic(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
   return sum * ((1.0 - f_in) * (1.0 - f_out) * cos_n * omega / PI);
 }
 
+// Cheap light for a GI hit point: one random light, shadowed analytically by the big spheres
+// (mirror, glass, blob cluster) instead of a march. Returns E/pi.
+fn direct_light_gi(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
+  let li = select(0u, 1u, rnd() < 0.5);
+  let c = light_c(li);
+  let r = light_r(li);
+  let to = c - p;
+  let dist = length(to);
+  let axis = to / dist;
+  let sin2 = min((r * r) / (dist * dist), 0.999);
+  let cos_max = sqrt(1.0 - sin2);
+  let dir = sample_cone(axis, cos_max);
+  let cos_n = dot(n, dir);
+  if (cos_n <= 0.0) {
+    return vec3<f32>(0.0);
+  }
+  let ro = p + n * 0.003;
+  let hs = isect_sphere(ro, dir, c, r);
+  if (hs.x < 0.0) {
+    return vec3<f32>(0.0);
+  }
+  if (has(F_SHADOWS)) {
+    let a = isect_sphere(ro, dir, MIRROR_C, 1.0);
+    let b = isect_sphere(ro, dir, GLASS_C, GLASS_R);
+    let k = isect_sphere(ro, dir, vec3<f32>(0.15, 0.5, -1.7), 0.7);
+    let t = hs.x;
+    if ((a.y > 0.0 && a.x < t) || (b.y > 0.0 && b.x < t) || (k.y > 0.0 && k.x < t)) {
+      return vec3<f32>(0.0);
+    }
+  }
+  return light_e(li) * (cos_n * (2.0 * PI * (1.0 - cos_max)) * 2.0 / PI);
+}
+
 // One-bounce diffuse GI (hybrid mode): returns incoming radiance (multiply by albedo).
 fn indirect(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
   let d = cos_hemi(n);
   let ro = p + n * 0.004;
   let h = march_gi(ro, d, 1.0, 14.0, GI_STEPS);
   if (h.z < 0.5) {
-    return sky(d);
+    return sky(d) * select(1.0, 0.5, h.z > 0.1);
   }
   let q = ro + d * h.x;
   let m = material(q, h.y);
@@ -414,8 +462,8 @@ fn indirect(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
   if (m.kind == 1u) {
     alb = alb * 0.5;
   }
-  let nq = calc_normal(q);
-  return alb * direct_light(q, nq, GI_STEPS);
+  let nq = calc_normal_gi(q);
+  return alb * direct_light_gi(q, nq);
 }
 
 // ---------------------------------------------------------------- integrator

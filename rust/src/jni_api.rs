@@ -31,6 +31,10 @@ pub extern "system" fn Java_dev_starinin_raytrace_Native_start(env: JNIEnv, _c: 
     let st = stats.clone();
     let (w, h) = (w.max(1) as u32, h.max(1) as u32);
     let handle = std::thread::Builder::new().name("raytrace".into()).spawn(move || {
+        // Unwinding panics (e.g. wgpu after a GPU watchdog reset, or Gfx::new failing) must end
+        // only this thread, not the process; stats then stay zeros and the HUD copes with that.
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        log::info!("render thread: creating Gfx");
         let gfx = Gfx::new(win, w, h);
         let mut r = Renderer::new(gfx, (w, h), st);
         'run: loop {
@@ -48,10 +52,18 @@ pub extern "system" fn Java_dev_starinin_raytrace_Native_start(env: JNIEnv, _c: 
             }
             r.frame();
         }
+        }));
+        if let Err(e) = res {
+            let msg = e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
+            log::error!("render thread panicked (GPU init failure or device loss), rendering stopped: {msg}");
+        }
     }).expect("spawn");
     *ENGINE.lock().unwrap() = Some(Engine { tx, handle: Some(handle), stats });
 }
 
+// Called from the UI thread (surfaceDestroyed). The join must stay: the native window is
+// released right after, so the render thread must be gone first. Frame time is bounded by the
+// safety governor, and a panicking render thread exits immediately (catch_unwind).
 fn stop_engine() {
     let e = ENGINE.lock().unwrap().take();
     if let Some(mut e) = e {

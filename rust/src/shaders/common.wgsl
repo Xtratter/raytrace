@@ -90,7 +90,7 @@ fn pcg(v: u32) -> u32 {
 // Which pixel of the bs x bs block (gx, gy) a GI pass samples this frame (mirrors gi::block_offset).
 fn block_offset(gx: u32, gy: u32, frame: u32, bs: u32) -> vec2<u32> {
   let n = bs * bs;
-  let h = pcg(gx * 73856093u ^ gy * 19349663u);
+  let h = pcg((gx * 73856093u) ^ (gy * 19349663u));
   let k = (frame + h) % n;
   return vec2<u32>(k % bs, k / bs);
 }

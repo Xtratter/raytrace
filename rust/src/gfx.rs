@@ -3,6 +3,7 @@ use std::num::NonZeroU64;
 use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
+use crate::params::flags::GI_SPLIT;
 use ndk::native_window::NativeWindow;
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
 
@@ -30,6 +31,9 @@ const _: () = assert!(std::mem::size_of::<GpuParams>() == 192);
 struct Tex { tex: wgpu::Texture, view: wgpu::TextureView }
 
 #[allow(dead_code)]
+struct GiTargets { bs: u32, w: u32, h: u32, raw: Tex, hist: [Tex; 2], tmp: [Tex; 2] }
+
+#[allow(dead_code)]
 struct Targets {
     w: u32, h: u32,
     raw: Tex,
@@ -37,6 +41,8 @@ struct Targets {
     hist: [Tex; 2],
     tmp: [Tex; 2],
     alb: Tex,
+    comp: Tex,
+    gi: Option<GiTargets>,
 }
 
 pub struct Gfx {
@@ -47,10 +53,15 @@ pub struct Gfx {
     modes: Vec<wgpu::PresentMode>,
     params_buf: wgpu::Buffer,
     step_bufs: [wgpu::Buffer; 3],
+    gi_step_bufs: [wgpu::Buffer; 2],
     sampler: wgpu::Sampler,
     trace_pl: wgpu::ComputePipeline, trace_bgl: wgpu::BindGroupLayout,
     temporal_pl: wgpu::ComputePipeline, temporal_bgl: wgpu::BindGroupLayout,
     atrous_pl: wgpu::ComputePipeline, atrous_bgl: wgpu::BindGroupLayout,
+    gi_trace_pl: wgpu::ComputePipeline, gi_trace_bgl: wgpu::BindGroupLayout,
+    gi_temporal_pl: wgpu::ComputePipeline, gi_temporal_bgl: wgpu::BindGroupLayout,
+    gi_atrous_pl: wgpu::ComputePipeline, gi_atrous_bgl: wgpu::BindGroupLayout,
+    composite_pl: wgpu::ComputePipeline, composite_bgl: wgpu::BindGroupLayout,
     present_pl: wgpu::RenderPipeline, present_bgl: wgpu::BindGroupLayout,
     targets: Option<Targets>,
     _window: NativeWindow, // dropped after `surface` (field order)
@@ -141,6 +152,22 @@ impl Gfx {
             uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false),
             tex_out(3, wgpu::TextureFormat::Rgba16Float), uniform(4, cs),
         ]);
+        let f16 = wgpu::TextureFormat::Rgba16Float;
+        let gi_trace_bgl = bgl(&device, "gi_trace", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_out(3, f16)]);
+        let gi_temporal_bgl = bgl(&device, "gi_temporal", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_in(3, cs, false), tex_in(4, cs, false), tex_out(5, f16)]);
+        let gi_atrous_bgl = bgl(&device, "gi_atrous", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_out(3, f16), uniform(4, cs)]);
+        let composite_bgl = bgl(&device, "composite", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_in(3, cs, false), tex_in(4, cs, false), tex_out(5, f16)]);
+        let mk = |name: &str, src: String, l: &wgpu::BindGroupLayout| {
+            let m = shader(&device, name, src);
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(name), layout: Some(&layout(&device, l)), module: &m,
+                entry_point: Some("main"), compilation_options: Default::default(), cache: None,
+            })
+        };
+        let gi_trace_pl = mk("gi_trace", crate::shaders::gi_trace(), &gi_trace_bgl);
+        let gi_temporal_pl = mk("gi_temporal", crate::shaders::gi_temporal(), &gi_temporal_bgl);
+        let gi_atrous_pl = mk("gi_atrous", crate::shaders::gi_atrous(), &gi_atrous_bgl);
+        let composite_pl = mk("composite", crate::shaders::composite(), &composite_bgl);
         let present_bgl = bgl(&device, "present", &[
             uniform(0, fs), tex_in(1, fs, true),
             wgpu::BindGroupLayoutEntry { binding: 2, visibility: fs, count: None,
@@ -187,6 +214,7 @@ impl Gfx {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false,
         });
         let step_bufs = [step(), step(), step()];
+        let gi_step_bufs = [step(), step()];
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("linear"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -197,7 +225,8 @@ impl Gfx {
         });
 
         Gfx {
-            surface, device, queue, config, modes: caps.present_modes, params_buf, step_bufs, sampler,
+            surface, device, queue, config, modes: caps.present_modes, params_buf, step_bufs, gi_step_bufs, sampler,
+            gi_trace_pl, gi_trace_bgl, gi_temporal_pl, gi_temporal_bgl, gi_atrous_pl, gi_atrous_bgl, composite_pl, composite_bgl,
             trace_pl, trace_bgl, temporal_pl, temporal_bgl, atrous_pl, atrous_bgl, present_pl, present_bgl, targets: None, _window: window,
         }
     }
@@ -225,13 +254,23 @@ impl Gfx {
     }
 
     /// (Re)creates render-resolution targets; true if they were recreated.
-    pub fn ensure_targets(&mut self, rw: u32, rh: u32) -> bool {
+    pub fn ensure_targets(&mut self, rw: u32, rh: u32, gi_block: u32) -> bool {
         if let Some(t) = &self.targets {
-            if t.w == rw && t.h == rh { return false; }
+            if t.w == rw && t.h == rh && t.gi.as_ref().map(|g| g.bs).unwrap_or(0) == gi_block { return false; }
         }
         let d = &self.device;
         let f16 = wgpu::TextureFormat::Rgba16Float;
         let f32x4 = wgpu::TextureFormat::Rgba32Float;
+        let gi = if gi_block > 0 {
+            let (gw, gh) = crate::gi::gi_size(rw, rh, gi_block);
+            for (i, b) in self.gi_step_bufs.iter().enumerate() {
+                let v: [u32; 4] = [1 << i, gw, gh, 0];
+                self.queue.write_buffer(b, 0, bytemuck::bytes_of(&v));
+            }
+            Some(GiTargets { bs: gi_block, w: gw, h: gh, raw: make_tex(d, gw, gh, f16),
+                hist: [make_tex(d, gw, gh, f16), make_tex(d, gw, gh, f16)],
+                tmp: [make_tex(d, gw, gh, f16), make_tex(d, gw, gh, f16)] })
+        } else { None };
         self.targets = Some(Targets {
             w: rw, h: rh,
             raw: make_tex(d, rw, rh, f16),
@@ -239,6 +278,8 @@ impl Gfx {
             hist: [make_tex(d, rw, rh, f16), make_tex(d, rw, rh, f16)],
             tmp: [make_tex(d, rw, rh, f16), make_tex(d, rw, rh, f16)],
             alb: make_tex(d, rw, rh, f16),
+            comp: make_tex(d, rw, rh, f16),
+            gi,
         });
         for (i, b) in self.step_bufs.iter().enumerate() {
             let v: [u32; 4] = [1 << i, rw, rh, 0];
@@ -297,9 +338,52 @@ impl Gfx {
             ]));
             out = dst;
         }
+        let gi_on = p.flags & GI_SPLIT != 0 && p.gi_block > 0 && t.gi.is_some();
+        let mut gi_bgs = None;
+        let mut comp_bg = None;
+        if let (true, Some(g)) = (gi_on, t.gi.as_ref()) {
+            let a = bg(dev, &self.gi_trace_bgl, &[
+                (0, pb.clone()),
+                (1, wgpu::BindingResource::TextureView(&t.gbuf[parity].view)),
+                (2, wgpu::BindingResource::TextureView(&t.alb.view)),
+                (3, wgpu::BindingResource::TextureView(&g.raw.view)),
+            ]);
+            let b = bg(dev, &self.gi_temporal_bgl, &[
+                (0, pb.clone()),
+                (1, wgpu::BindingResource::TextureView(&g.raw.view)),
+                (2, wgpu::BindingResource::TextureView(&t.gbuf[parity].view)),
+                (3, wgpu::BindingResource::TextureView(&t.gbuf[1 - parity].view)),
+                (4, wgpu::BindingResource::TextureView(&g.hist[1 - parity].view)),
+                (5, wgpu::BindingResource::TextureView(&g.hist[parity].view)),
+            ]);
+            let c0 = bg(dev, &self.gi_atrous_bgl, &[
+                (0, self.gi_step_bufs[0].as_entire_binding()),
+                (1, wgpu::BindingResource::TextureView(&g.hist[parity].view)),
+                (2, wgpu::BindingResource::TextureView(&t.gbuf[parity].view)),
+                (3, wgpu::BindingResource::TextureView(&g.tmp[0].view)),
+                (4, pb.clone()),
+            ]);
+            let c1 = bg(dev, &self.gi_atrous_bgl, &[
+                (0, self.gi_step_bufs[1].as_entire_binding()),
+                (1, wgpu::BindingResource::TextureView(&g.tmp[0].view)),
+                (2, wgpu::BindingResource::TextureView(&t.gbuf[parity].view)),
+                (3, wgpu::BindingResource::TextureView(&g.tmp[1].view)),
+                (4, pb.clone()),
+            ]);
+            gi_bgs = Some((a, b, c0, c1, (g.w, g.h)));
+            comp_bg = Some(bg(dev, &self.composite_bgl, &[
+                (0, pb.clone()),
+                (1, wgpu::BindingResource::TextureView(out)),
+                (2, wgpu::BindingResource::TextureView(&t.gbuf[parity].view)),
+                (3, wgpu::BindingResource::TextureView(&t.alb.view)),
+                (4, wgpu::BindingResource::TextureView(&g.tmp[1].view)),
+                (5, wgpu::BindingResource::TextureView(&t.comp.view)),
+            ]));
+        }
+        let shown = if gi_on { &t.comp.view } else { out };
         let present_bg = bg(dev, &self.present_bgl, &[
             (0, pb),
-            (1, wgpu::BindingResource::TextureView(out)),
+            (1, wgpu::BindingResource::TextureView(shown)),
             (2, wgpu::BindingResource::Sampler(&self.sampler)),
         ]);
 
@@ -310,16 +394,41 @@ impl Gfx {
             cp.set_bind_group(0, &trace_bg, &[]);
             cp.dispatch_workgroups(t.w.div_ceil(8), t.h.div_ceil(8), 1);
         }
+        if let Some((a, _, _, _, (gw, gh))) = &gi_bgs {
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("gi_trace"), timestamp_writes: None });
+            cp.set_pipeline(&self.gi_trace_pl);
+            cp.set_bind_group(0, a, &[]);
+            cp.dispatch_workgroups(gw.div_ceil(8), gh.div_ceil(8), 1);
+        }
         {
             let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("temporal"), timestamp_writes: None });
             cp.set_pipeline(&self.temporal_pl);
             cp.set_bind_group(0, &temporal_bg, &[]);
             cp.dispatch_workgroups(t.w.div_ceil(8), t.h.div_ceil(8), 1);
         }
+        if let Some((_, b, c0, c1, (gw, gh))) = &gi_bgs {
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("gi_temporal"), timestamp_writes: None });
+            cp.set_pipeline(&self.gi_temporal_pl);
+            cp.set_bind_group(0, b, &[]);
+            cp.dispatch_workgroups(gw.div_ceil(8), gh.div_ceil(8), 1);
+            drop(cp);
+            for abg in [c0, c1] {
+                let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("gi_atrous"), timestamp_writes: None });
+                cp.set_pipeline(&self.gi_atrous_pl);
+                cp.set_bind_group(0, abg, &[]);
+                cp.dispatch_workgroups(gw.div_ceil(8), gh.div_ceil(8), 1);
+            }
+        }
         for abg in &atrous_bgs {
             let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("atrous"), timestamp_writes: None });
             cp.set_pipeline(&self.atrous_pl);
             cp.set_bind_group(0, abg, &[]);
+            cp.dispatch_workgroups(t.w.div_ceil(8), t.h.div_ceil(8), 1);
+        }
+        if let Some(cbg) = &comp_bg {
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("composite"), timestamp_writes: None });
+            cp.set_pipeline(&self.composite_pl);
+            cp.set_bind_group(0, cbg, &[]);
             cp.dispatch_workgroups(t.w.div_ceil(8), t.h.div_ceil(8), 1);
         }
         {

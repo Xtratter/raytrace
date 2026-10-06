@@ -5,3 +5,4 @@ local.properties
 rust/target/
 app/src/main/jniLibs/
 *.apk
+.kotlin/

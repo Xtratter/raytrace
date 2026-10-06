@@ -82,6 +82,12 @@ impl Governor {
     }
 }
 
+/// Frames right after engine start / target reallocation include shader and surface setup
+/// and are not representative: the safety governor ignores them while `warmup > 0`.
+pub fn governor_active(warmup: u32) -> bool {
+    warmup == 0
+}
+
 /// Render size: at least 8x8, multiple of 8 px (rounded down), never larger than the window.
 pub fn render_size(win_w: u32, win_h: u32, scale: f32) -> (u32, u32) {
     let f = |v: u32| (((v as f32 * scale) as u32) & !7).clamp(8, v.max(8));
@@ -91,6 +97,12 @@ pub fn render_size(win_w: u32, win_h: u32, scale: f32) -> (u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn governor_inactive_during_warmup() {
+        assert!(!governor_active(3) && !governor_active(1));
+        assert!(governor_active(0));
+    }
 
     #[test]
     fn drops_when_slow() {

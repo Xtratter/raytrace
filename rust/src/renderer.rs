@@ -10,6 +10,7 @@ pub struct Renderer {
     pub cam: Camera,
     adaptive: AdaptiveRes,
     governor: Governor,
+    warmup: u32,
     last_ms: f32,
     win: (u32, u32),
     frame: u32,
@@ -30,7 +31,7 @@ impl Renderer {
     pub fn new(gfx: Gfx, win: (u32, u32), stats: Arc<Mutex<[f32; 8]>>) -> Renderer {
         let cam = Camera::new();
         let pose = cam.pose();
-        Renderer { gfx, store: Store::new(), cam, adaptive: AdaptiveRes::new(0.25, 0.33, 0.33), governor: Governor::new(), last_ms: 0.0, win,
+        Renderer { gfx, store: Store::new(), cam, adaptive: AdaptiveRes::new(0.25, 0.33, 0.33), governor: Governor::new(), warmup: 3, last_ms: 0.0, win,
             frame: 0, seed: 1, time: 0.0, last: Instant::now(), start: Instant::now(), prev_pose: pose,
             prev_jitter: [0.0; 2], reset_history: true, fps_t: Instant::now(), fps_n: 0, log_t: Instant::now(), stats }
     }
@@ -62,7 +63,8 @@ impl Renderer {
         // Safety cap (heavy settings): never exceeds what the last frames could afford.
         let scale = scale * self.governor.limit_scale;
         let (rw, rh) = render_size(self.win.0, self.win.1, scale);
-        if self.gfx.ensure_targets(rw, rh) { self.reset_history = true; }
+        if self.gfx.ensure_targets(rw, rh) { self.reset_history = true; self.warmup = 2; }
+        let gov = governor_active(self.warmup);
 
         self.cam.update(dt, s.get(id::ORBIT) as u32);
         let pose = self.cam.pose();
@@ -83,7 +85,7 @@ impl Renderer {
             cam_pos: pose.0, time: self.time, cam_target: pose.1, fov,
             prev_pos: self.prev_pose.0, frame: self.frame, prev_target: self.prev_pose.1, seed: self.seed,
             jitter: jit, prev_jitter: self.prev_jitter,
-            mode: pt as u32, flags, bounces: s.get(id::BOUNCES) as u32, spp: if self.last_ms > Governor::SLOW_MS { 1 } else { s.get(id::SPP) as u32 },
+            mode: pt as u32, flags, bounces: s.get(id::BOUNCES) as u32, spp: if gov && self.last_ms > Governor::SLOW_MS { 1 } else { s.get(id::SPP) as u32 },
             exposure: s.get(id::EXPOSURE) * 0.5, tonemap: s.get(id::TONEMAP) as u32,
             sharpen: [0.0, 0.25, 0.5, 0.8][s.get(id::SHARPEN) as usize], hist_floor: s.hist_floor(),
             sky_kind: s.get(id::SKY) as u32, history_reset: self.reset_history as u32, pad0: 0, pad1: 0,
@@ -94,8 +96,13 @@ impl Renderer {
             std::thread::sleep(std::time::Duration::from_millis(8));
         }
         if ms >= 0.0 {
-            self.last_ms = ms;
-            self.governor.update(ms, self.start.elapsed().as_secs_f32());
+            if gov {
+                self.last_ms = ms;
+                self.governor.update(ms, self.start.elapsed().as_secs_f32());
+            } else {
+                self.last_ms = 0.0;
+                self.warmup -= 1;
+            }
             if s.on(id::ADAPTIVE) { self.adaptive.update(ms, s.get(id::TARGET_FPS), self.start.elapsed().as_secs_f32()); }
             self.prev_pose = pose;
             self.prev_jitter = jit;

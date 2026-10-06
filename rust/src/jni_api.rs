@@ -29,10 +29,11 @@ pub extern "system" fn Java_dev_starinin_raytrace_Native_start(env: JNIEnv, _c: 
     let (tx, rx) = channel::<Cmd>();
     let stats = Arc::new(Mutex::new([0.0f32; 8]));
     let st = stats.clone();
+    let st2 = stats.clone();
     let (w, h) = (w.max(1) as u32, h.max(1) as u32);
     let handle = std::thread::Builder::new().name("raytrace".into()).spawn(move || {
         // Unwinding panics (e.g. wgpu after a GPU watchdog reset, or Gfx::new failing) must end
-        // only this thread, not the process; stats then stay zeros and the HUD copes with that.
+        // only this thread, not the process; stats are zeroed when the thread ends so the HUD shows 0 fps, not stale values.
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         log::info!("render thread: creating Gfx");
         let gfx = Gfx::new(win, w, h);
@@ -53,6 +54,7 @@ pub extern "system" fn Java_dev_starinin_raytrace_Native_start(env: JNIEnv, _c: 
             r.frame();
         }
         }));
+        *st2.lock().unwrap() = [0.0; 8];
         if let Err(e) = res {
             let msg = e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
             log::error!("render thread panicked (GPU init failure or device loss), rendering stopped: {msg}");

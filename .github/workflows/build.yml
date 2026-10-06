@@ -1,0 +1,41 @@
+# Build on every push and pull request: Rust host unit tests, Android unit tests and a release APK (unsigned) as an artifact.
+name: build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Android SDK packages
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+      - name: Rust target and host unit tests
+        run: |
+          rustup target add aarch64-linux-android
+          (cd rust && cargo test --lib)
+      - name: Unit tests and release build
+        env:
+          TARGET: aarch64-linux-android
+        run: |
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang"
+          export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
+          ./gradlew --no-daemon testDebugUnitTest assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: raytrace-${{ github.sha }}
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error

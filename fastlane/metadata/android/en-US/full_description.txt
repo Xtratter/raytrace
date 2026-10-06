@@ -1,0 +1,10 @@
+Raytrace is a realtime ray tracer for Android. A scene of mirror and glass spheres, a torus, a Menger sponge and glowing lamps is rendered on the GPU with Rust and Vulkan (wgpu).
+
+- Hybrid mode with soft shadows, global illumination, caustics, reflections and refraction, and a progressive path-tracing mode
+- Temporal reprojection and an a-trous denoiser for a clean, stable image
+- Adaptive resolution that holds your target fps
+- Presets: Performance, Balanced, Quality
+- Material 3 Expressive settings with five tabs, themes, haptics; English and Russian
+- Drag to orbit, pinch to zoom, double-tap to reset the camera
+
+Requires an arm64 device with Vulkan 1.1 (tuned for Adreno GPUs). Open source, Apache-2.0.

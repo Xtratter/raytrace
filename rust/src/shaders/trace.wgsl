@@ -6,10 +6,12 @@
 @group(0) @binding(0) var<uniform> P: Params;
 @group(0) @binding(1) var out_rad: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(2) var out_g: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(3) var out_alb: texture_storage_2d<rgba16float, write>;
 var<private> g_depth: f32;
 var<private> g_n: vec3<f32>;
 var<private> g_id: f32;
 var<private> g_skip: bool; // checkerboard: pixel only fills the g-buffer
+var<private> g_alb: vec4<f32>; // rgb albedo of the primary diffuse hit, a = 1 when its GI is deferred to the GI pass
 
 // ---------------------------------------------------------------- integrator
 fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
@@ -40,6 +42,10 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
       m.rough = 0.0;
     }
 
+    if (b == 0 && !pt && m.kind == 0u && m.emit.x <= 0.0 && has(F_GI) && has(F_GI_SPLIT)) {
+      g_alb = vec4<f32>(m.albedo, 1.0);
+    }
+
     if (m.emit.x > 0.0) {
       if (spec) {
         col += thr * m.emit;
@@ -57,7 +63,7 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
       if (!pt) {
         var lo = direct_light(p, nf, select(16, MENGER_SHADOW_STEPS, abs(h.y - 5.0) < 0.5), abs(h.y - 5.0) < 0.5);
         if (has(F_CAUSTICS)) { lo += caustic(p, nf); }
-        if (has(F_GI)) { lo += indirect(p, nf); }
+        if (has(F_GI) && g_alb.w < 0.5) { lo += indirect(p, nf); }
         col += thr * m.albedo * lo;
         break;
       }
@@ -138,8 +144,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var traced = 1.0;
   let skip = has(F_CHECKER) && (((gid.x + gid.y + P.frame) & 1u) == 1u);
   g_skip = skip;
+  g_alb = vec4<f32>(0.0);
   col = shade_pixel(pix); // for skipped pixels trace() stops after the primary hit (g-buffer only)
   if (skip) { col = vec3<f32>(0.0); traced = 0.0; }
   textureStore(out_rad, ip, vec4<f32>(col, traced));
   textureStore(out_g, ip, vec4<f32>(g_depth, oct_encode(g_n), g_id));
+  textureStore(out_alb, ip, g_alb);
 }

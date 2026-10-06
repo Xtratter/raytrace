@@ -36,6 +36,7 @@ struct Targets {
     gbuf: [Tex; 2],
     hist: [Tex; 2],
     tmp: [Tex; 2],
+    alb: Tex,
 }
 
 pub struct Gfx {
@@ -131,7 +132,7 @@ impl Gfx {
 
         let cs = wgpu::ShaderStages::COMPUTE;
         let fs = wgpu::ShaderStages::FRAGMENT;
-        let trace_bgl = bgl(&device, "trace", &[uniform(0, cs), tex_out(1, wgpu::TextureFormat::Rgba16Float), tex_out(2, wgpu::TextureFormat::Rgba32Float)]);
+        let trace_bgl = bgl(&device, "trace", &[uniform(0, cs), tex_out(1, wgpu::TextureFormat::Rgba16Float), tex_out(2, wgpu::TextureFormat::Rgba32Float), tex_out(3, wgpu::TextureFormat::Rgba16Float)]);
         let temporal_bgl = bgl(&device, "temporal", &[
             uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_in(3, cs, false), tex_in(4, cs, false),
             tex_out(5, wgpu::TextureFormat::Rgba16Float),
@@ -237,6 +238,7 @@ impl Gfx {
             gbuf: [make_tex(d, rw, rh, f32x4), make_tex(d, rw, rh, f32x4)],
             hist: [make_tex(d, rw, rh, f16), make_tex(d, rw, rh, f16)],
             tmp: [make_tex(d, rw, rh, f16), make_tex(d, rw, rh, f16)],
+            alb: make_tex(d, rw, rh, f16),
         });
         for (i, b) in self.step_bufs.iter().enumerate() {
             let v: [u32; 4] = [1 << i, rw, rh, 0];
@@ -268,6 +270,7 @@ impl Gfx {
             (0, pb.clone()),
             (1, wgpu::BindingResource::TextureView(&t.raw.view)),
             (2, wgpu::BindingResource::TextureView(&t.gbuf[parity].view)),
+            (3, wgpu::BindingResource::TextureView(&t.alb.view)),
         ]);
         let temporal_bg = bg(dev, &self.temporal_bgl, &[
             (0, pb.clone()),

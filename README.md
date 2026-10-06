@@ -21,6 +21,7 @@ The interface is bilingual (English and Russian, follows the system language); t
 - **Temporal reprojection**: history is reprojected with the previous camera, validated by depth, normal and material id,
   clamped to the neighbourhood colour range and blended by history length; sub-pixel jitter (Halton) gives anti-aliasing
 - **A-trous denoiser**: 0-3 edge-stopping passes (depth, normal, luminance), checker edges are preserved
+- **Safety governor**: heavy settings (e.g. path tracing at 1.0x with many samples and bounces) are scaled down automatically when a frame takes more than ~1.2 s, then recover slowly
 - **Adaptive resolution**: pick a target fps (30 / 45 / 60 / 90); the render scale moves between 0.25x and your chosen maximum
   with hysteresis (at most one change per half second)
 - **Present**: Catmull-Rom upscale, optional sharpening, exposure, tonemapping (ACES / Reinhard / none), dithering
@@ -114,6 +115,7 @@ export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
 
 Measured on a **POCO F3 (Adreno 650)**, 120 Hz display, 1080x2400. Fresh process, 12 s, last log line; the scale is what the adaptive controller settled on
 (Quality uses a fixed 0.5x). Details and history are in [docs/bench.md](docs/bench.md).
+These figures predate the exact-march Menger shadow fix and will be re-measured before release.
 
 | Preset | Mode | GPU ms | fps | Render scale |
 |---|---|---:|---:|---:|
@@ -134,6 +136,7 @@ For comparison, the prototype this app grew out of ran at **7.1 fps** (0.33x, hy
 - Menger sponge rotation can leave ghosting that the neighbourhood clamp only partly removes
 - Global illumination and shadows use approximations of the Menger sponge (a bounding box / analytic spheres for secondary rays), with some blue speckle and tint on the floor and spheres
 - Dotted lines along the room wall edges are visible and were not investigated
+- Very heavy settings are scaled down automatically by a safety governor (lower resolution, 1 sample per pixel) until frames get fast again, so the image can look coarser than the chosen scale
 - Needs Vulkan 1.1 and an Adreno-class GPU; arm64 only
 - No Vulkan-unavailable screen: the app logs the error and shows a black surface
 

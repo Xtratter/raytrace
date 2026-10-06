@@ -10,4 +10,5 @@
 - Adaptive resolution with a target fps, optional checkerboard tracing, frame limit
 - Presets (Performance, Balanced, Quality), shadows / global illumination / caustics / reflections switches, lamp colours, sky, auto-orbit
 - Material 3 Expressive settings UI (android-ui-kit): five tabs, themes, haptics, HUD; English and Russian
+- Safety governor: very slow frames automatically reduce render scale and samples per pixel
 - Orbit, pinch zoom and double-tap reset gestures

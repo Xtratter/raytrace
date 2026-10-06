@@ -41,9 +41,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var hist = vec3<f32>(0.0);
   var n = 0.0;
   if (P.history_reset == 0u) {
-    let rd = cam_ray(vec2<f32>(fp) + vec2<f32>(0.5) + P.jitter, P.res, P.cam_pos, P.cam_target, P.fov);
+    // Jitter is deliberately omitted (here and in pp below): GI is low-frequency, and the per-frame
+    // Halton jitter would otherwise shift the history lookup by up to +-1 px and blur it every frame.
+    let rd = cam_ray(vec2<f32>(fp) + vec2<f32>(0.5), P.res, P.cam_pos, P.cam_target, P.fov);
     let wp = P.cam_pos + rd * gc.x;
-    let pp = cam_project(wp, P.res, P.prev_pos, P.prev_target, P.fov) - P.prev_jitter;
+    let pp = cam_project(wp, P.res, P.prev_pos, P.prev_target, P.fov);
     if (pp.x >= 0.0 && pp.y >= 0.0 && pp.x < P.res.x && pp.y < P.res.y) {
       let ipp = clamp(vec2<i32>(floor(pp)), vec2<i32>(0), flim);
       let gp = textureLoad(g_prev, ipp, 0);

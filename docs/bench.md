@@ -10,3 +10,5 @@
 - task 6 temporal pass (352x792, 0=0 2=0 8=0 18=0 10=0, spp 1, bounces 6): 6=1 still 9.3-9.5 fps / gpu 106-111 ms; 6=0 still 9.2-9.3 fps / 106-108 ms (temporal pass cost within noise). Orbit 19=2: 8.6-8.9 fps both.
   Noise (screenshot luminance, high-pass residual std; wall / floor): still 6=0 18.6 / 15.9 -> 6=1 3.8 / 4.2; orbit 6=0 18.4 / 13.3 -> 6=1 4.0 / 3.9.
   Path tracing still (0=1): 0.9 fps / gpu ~1160 ms; wall/floor hp-std 14.1 / 12.4 at 4 s -> 2.2 / 2.5 at 20 s; no NaN log lines.
+- task 7 a-trous + full present (352x792 hybrid, 6=1 still, 0=0 2=0 18=0 19=0, spp 1, bounces 6): 8=0 9.2-9.3 fps / gpu 106-111 ms; 8=2 8.9 fps / 111-112 ms; 8=3 8.8 fps / 112-115 ms (3 passes cost ~5 ms, ~4%). Sharpen 9=3: within noise.
+  Screenshot metrics (hp-std wall / green wall; p99 gradient floor): 8=0 6.0 / 5.7, 22.0; 8=2 1.9 / 1.3, 28.6; 8=3 0.9 / 0.7, 29.1 (checker edges kept). First weights (wl = exp(-1.5|dl|)) gave 0.6 grain but blurred the checker: p99 floor 8.5.

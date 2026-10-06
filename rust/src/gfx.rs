@@ -44,12 +44,11 @@ pub struct Gfx {
     config: wgpu::SurfaceConfiguration,
     modes: Vec<wgpu::PresentMode>,
     params_buf: wgpu::Buffer,
-    #[allow(dead_code)]
     step_bufs: [wgpu::Buffer; 3],
     sampler: wgpu::Sampler,
     trace_pl: wgpu::ComputePipeline, trace_bgl: wgpu::BindGroupLayout,
     temporal_pl: wgpu::ComputePipeline, temporal_bgl: wgpu::BindGroupLayout,
-    // atrous_pl/atrous_bgl are added in Task 7.
+    atrous_pl: wgpu::ComputePipeline, atrous_bgl: wgpu::BindGroupLayout,
     present_pl: wgpu::RenderPipeline, present_bgl: wgpu::BindGroupLayout,
     targets: Option<Targets>,
     _window: NativeWindow, // dropped after `surface` (field order)
@@ -137,6 +136,10 @@ impl Gfx {
             uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_in(3, cs, false), tex_in(4, cs, false),
             tex_out(5, wgpu::TextureFormat::Rgba16Float),
         ]);
+        let atrous_bgl = bgl(&device, "atrous", &[
+            uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false),
+            tex_out(3, wgpu::TextureFormat::Rgba16Float), uniform(4, cs),
+        ]);
         let present_bgl = bgl(&device, "present", &[
             uniform(0, fs), tex_in(1, fs, true),
             wgpu::BindGroupLayoutEntry { binding: 2, visibility: fs, count: None,
@@ -147,6 +150,11 @@ impl Gfx {
         let temporal_mod = shader(&device, "temporal", include_str!("shaders/temporal.wgsl"));
         let temporal_pl = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("temporal"), layout: Some(&layout(&device, &temporal_bgl)), module: &temporal_mod,
+            entry_point: Some("main"), compilation_options: Default::default(), cache: None,
+        });
+        let atrous_mod = shader(&device, "atrous", include_str!("shaders/atrous.wgsl"));
+        let atrous_pl = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("atrous"), layout: Some(&layout(&device, &atrous_bgl)), module: &atrous_mod,
             entry_point: Some("main"), compilation_options: Default::default(), cache: None,
         });
         let present_mod = shader(&device, "present", include_str!("shaders/present.wgsl"));
@@ -189,7 +197,7 @@ impl Gfx {
 
         Gfx {
             surface, device, queue, config, modes: caps.present_modes, params_buf, step_bufs, sampler,
-            trace_pl, trace_bgl, temporal_pl, temporal_bgl, present_pl, present_bgl, targets: None, _window: window,
+            trace_pl, trace_bgl, temporal_pl, temporal_bgl, atrous_pl, atrous_bgl, present_pl, present_bgl, targets: None, _window: window,
         }
     }
 
@@ -238,7 +246,7 @@ impl Gfx {
     }
 
     /// Encodes and submits one frame; returns GPU time in ms, or negative if the frame was skipped.
-    pub fn render(&mut self, p: &GpuParams, _denoise_iters: u32, parity: usize) -> f32 {
+    pub fn render(&mut self, p: &GpuParams, denoise_iters: u32, parity: usize) -> f32 {
         self.queue.write_buffer(&self.params_buf, 0, bytemuck::bytes_of(p));
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
@@ -269,10 +277,26 @@ impl Gfx {
             (4, wgpu::BindingResource::TextureView(&t.hist[1 - parity].view)),
             (5, wgpu::BindingResource::TextureView(&t.hist[parity].view)),
         ]);
-        // Task 7 inserts atrous here (when iters > 0) and changes the sampled texture.
+        // A-trous chain: hist[parity] -> tmp[0] -> tmp[1] -> tmp[0]. History stays the unfiltered
+        // temporal output. Each iteration has its own step buffer ([step, w, h, 0]) and bind group.
+        let iters = (denoise_iters as usize).min(self.step_bufs.len());
+        let mut atrous_bgs = Vec::with_capacity(iters);
+        let mut out = &t.hist[parity].view;
+        for k in 0..iters {
+            let src = if k == 0 { &t.hist[parity].view } else { &t.tmp[(k + 1) % 2].view };
+            let dst = &t.tmp[k % 2].view;
+            atrous_bgs.push(bg(dev, &self.atrous_bgl, &[
+                (0, self.step_bufs[k].as_entire_binding()),
+                (1, wgpu::BindingResource::TextureView(src)),
+                (2, wgpu::BindingResource::TextureView(&t.gbuf[parity].view)),
+                (3, wgpu::BindingResource::TextureView(dst)),
+                (4, pb.clone()),
+            ]));
+            out = dst;
+        }
         let present_bg = bg(dev, &self.present_bgl, &[
             (0, pb),
-            (1, wgpu::BindingResource::TextureView(&t.hist[parity].view)),
+            (1, wgpu::BindingResource::TextureView(out)),
             (2, wgpu::BindingResource::Sampler(&self.sampler)),
         ]);
 
@@ -287,6 +311,12 @@ impl Gfx {
             let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("temporal"), timestamp_writes: None });
             cp.set_pipeline(&self.temporal_pl);
             cp.set_bind_group(0, &temporal_bg, &[]);
+            cp.dispatch_workgroups(t.w.div_ceil(8), t.h.div_ceil(8), 1);
+        }
+        for abg in &atrous_bgs {
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("atrous"), timestamp_writes: None });
+            cp.set_pipeline(&self.atrous_pl);
+            cp.set_bind_group(0, abg, &[]);
             cp.dispatch_workgroups(t.w.div_ceil(8), t.h.div_ceil(8), 1);
         }
         {
@@ -311,5 +341,25 @@ impl Gfx {
         let ms = t0.elapsed().as_secs_f32() * 1000.0;
         frame.present();
         ms
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wgpu::naga;
+
+    fn validate(name: &str, body: &str) {
+        let src = format!("{}\n{}", include_str!("shaders/common.wgsl"), body);
+        let m = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(&src)));
+        naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty())
+            .validate(&m).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+    }
+
+    #[test]
+    fn shaders_validate() {
+        validate("trace", include_str!("shaders/trace.wgsl"));
+        validate("temporal", include_str!("shaders/temporal.wgsl"));
+        validate("atrous", include_str!("shaders/atrous.wgsl"));
+        validate("present", include_str!("shaders/present.wgsl"));
     }
 }

@@ -8,11 +8,65 @@ fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
   return vec4<f32>(p * 2.0 - 1.0, 0.0, 1.0);
 }
 
+fn aces(x: vec3<f32>) -> vec3<f32> {
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+// 9-tap Catmull-Rom (bilinear-optimised): sharp upscale from the low-res render
+fn sample_cr(uv: vec2<f32>) -> vec3<f32> {
+  let sz = P.res;
+  let pos = uv * sz;
+  let c = floor(pos - 0.5) + 0.5;
+  let f = pos - c;
+  let w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  let w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  let w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  let w3 = f * f * (-0.5 + 0.5 * f);
+  let w12 = w1 + w2;
+  let o12 = w2 / w12;
+  let p0 = (c - 1.0) / sz;
+  let p3 = (c + 2.0) / sz;
+  let p12 = (c + o12) / sz;
+  var r = textureSampleLevel(src, smp, vec2<f32>(p0.x, p0.y), 0.0).rgb * w0.x * w0.y;
+  r += textureSampleLevel(src, smp, vec2<f32>(p12.x, p0.y), 0.0).rgb * w12.x * w0.y;
+  r += textureSampleLevel(src, smp, vec2<f32>(p3.x, p0.y), 0.0).rgb * w3.x * w0.y;
+  r += textureSampleLevel(src, smp, vec2<f32>(p0.x, p12.y), 0.0).rgb * w0.x * w12.y;
+  r += textureSampleLevel(src, smp, vec2<f32>(p12.x, p12.y), 0.0).rgb * w12.x * w12.y;
+  r += textureSampleLevel(src, smp, vec2<f32>(p3.x, p12.y), 0.0).rgb * w3.x * w12.y;
+  r += textureSampleLevel(src, smp, vec2<f32>(p0.x, p3.y), 0.0).rgb * w0.x * w3.y;
+  r += textureSampleLevel(src, smp, vec2<f32>(p12.x, p3.y), 0.0).rgb * w12.x * w3.y;
+  r += textureSampleLevel(src, smp, vec2<f32>(p3.x, p3.y), 0.0).rgb * w3.x * w3.y;
+  return max(r, vec3<f32>(0.0));
+}
+
+// P.exposure is in EV (renderer converts half-stops); 0 = ACES, 1 = Reinhard, 2 = clamp.
+fn tone(c: vec3<f32>) -> vec3<f32> {
+  let e = c * exp2(P.exposure);
+  if (P.tonemap == 0u) { return aces(e); }
+  if (P.tonemap == 1u) { return e / (e + 1.0); }
+  return clamp(e, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+fn hash12(p: vec2<f32>) -> f32 {
+  var q = fract(vec3<f32>(p.xyx) * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+
 @fragment
 fn fs(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
-  let c = textureSampleLevel(src, smp, pos.xy / P.out_size, 0.0).rgb;
-  let m = c / (c + 1.0);
-  var o = m;
-  if ((P.flags & F_SRGB) == 0u) { o = pow(m, vec3<f32>(1.0 / 2.2)); }
+  let uv = pos.xy / P.out_size;
+  var o = tone(sample_cr(uv));
+  if (P.sharpen > 0.0) {
+    // unsharp mask in display space (after tonemap)
+    let px = 1.0 / P.res;
+    let avg = (tone(textureSampleLevel(src, smp, uv + vec2<f32>(px.x, 0.0), 0.0).rgb)
+             + tone(textureSampleLevel(src, smp, uv - vec2<f32>(px.x, 0.0), 0.0).rgb)
+             + tone(textureSampleLevel(src, smp, uv + vec2<f32>(0.0, px.y), 0.0).rgb)
+             + tone(textureSampleLevel(src, smp, uv - vec2<f32>(0.0, px.y), 0.0).rgb)) * 0.25;
+    o = clamp(o + (o - avg) * P.sharpen, vec3<f32>(0.0), vec3<f32>(1.0));
+  }
+  if ((P.flags & F_SRGB) == 0u) { o = pow(o, vec3<f32>(1.0 / 2.2)); }
+  o += (hash12(pos.xy) - 0.5) / 255.0;
   return vec4<f32>(o, 1.0);
 }

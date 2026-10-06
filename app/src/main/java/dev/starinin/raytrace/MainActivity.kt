@@ -31,8 +31,10 @@ class MainActivity : Activity() {
             override fun getFloat(k: String, d: Float) = sp.getFloat(k, d)
             override fun putFloat(k: String, v: Float) { sp.edit().putFloat(k, v).apply() }
         }) { id, v -> Native.setParam(id, v) }
-        intent.getStringExtra("dbg")?.split(',')?.forEach {
-            val (i, v) = it.split('='); settings.set(i.toInt(), v.toFloat())
+        // debug-only extras: ignored in release builds (the activity is exported)
+        val debuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (debuggable) intent.getStringExtra("dbg")?.split(',')?.forEach {
+            try { val (i, v) = it.split('='); settings.set(i.toInt(), v.toFloat()) } catch (_: Exception) {}
         }
         Haptics.init(this, sp)
         Haptics.onTouch = { v, e -> Expressive.morph(v, e) }
@@ -44,7 +46,7 @@ class MainActivity : Activity() {
         root.addView(render, FrameLayout.LayoutParams(-1, -1))
         buildOverlay()
         setContentView(root)
-        intent.getIntExtra("tab", -1).let { if (it >= 0) sheet.showTab(it) }   // debug: open the sheet at a tab
+        if (debuggable) intent.getIntExtra("tab", -1).let { if (it >= 0) sheet.showTab(it) }   // debug: open the sheet at a tab
     }
 
     private fun applyTheme() {

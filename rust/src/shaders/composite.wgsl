@@ -23,6 +23,13 @@ fn gi_tap(q: vec2<i32>, wb: f32, glim: vec2<i32>, n0: vec3<f32>, z0: f32, id0: f
   return vec4<f32>(sanitize(s.rgb) * w, w);
 }
 
+// bilinear-only tap (fallback): xyz = gi * weight, w = weight; invalid texels contribute nothing
+fn s_plain(q: vec2<i32>, wb: f32, glim: vec2<i32>) -> vec4<f32> {
+  let s = textureLoad(gi_tex, clamp(q, vec2<i32>(0), glim), 0);
+  let w = select(0.0, wb, s.a > 0.5);
+  return vec4<f32>(sanitize(s.rgb) * w, w);
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let flim = vec2<i32>(P.res) - vec2<i32>(1);
@@ -47,9 +54,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (s.w > 1e-4) {
       gi = s.xyz / s.w;
     } else {
-      let nq = clamp(vec2<i32>(floor(hp + vec2<f32>(0.5))), vec2<i32>(0), glim);
-      let sn = textureLoad(gi_tex, nq, 0);
-      if (sn.a > 0.5) { gi = sanitize(sn.rgb); }
+      // all bilateral weights vanished: average the valid taps with bilinear weights only
+      let f = s_plain(i0, (1.0 - t.x) * (1.0 - t.y), glim)
+            + s_plain(i0 + vec2<i32>(1, 0), t.x * (1.0 - t.y), glim)
+            + s_plain(i0 + vec2<i32>(0, 1), (1.0 - t.x) * t.y, glim)
+            + s_plain(i0 + vec2<i32>(1, 1), t.x * t.y, glim);
+      if (f.w > 1e-6) { gi = f.xyz / f.w; }
     }
     o = c + a.rgb * gi;
   }

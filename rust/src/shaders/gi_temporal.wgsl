@@ -28,7 +28,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let gp0 = vec2<i32>(gid.xy);
   let cur = textureLoad(gi_raw, gp0, 0);
   if (cur.a < 0.5) {
-    textureStore(gi_hist_out, gp0, vec4<f32>(0.0));
+    // invalid sample: keep the existing history (no length increment) unless history was reset
+    var keep = vec4<f32>(0.0);
+    if (P.history_reset == 0u) { keep = textureLoad(gi_hist_in, gp0, 0); }
+    textureStore(gi_hist_out, gp0, keep);
     return;
   }
   let off = block_offset(gid.x, gid.y, P.frame, bs);
@@ -49,7 +52,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             && dot(oct_decode(gc.yz), oct_decode(gp.yz)) > 0.85
             && gp.w == gc.w;
       if (ok) {
-        let f = pp / f32(bs) - vec2<f32>(0.5);
+        // history texels live at block centres: shift pp to the block-centre equivalent
+        let pc = pp + vec2<f32>(f32(bs) * 0.5) - vec2<f32>(f32(off.x), f32(off.y)) - vec2<f32>(0.5);
+        let f = pc / f32(bs) - vec2<f32>(0.5);
         let i0 = vec2<i32>(floor(f));
         let t = f - floor(f);
         let w00 = (1.0 - t.x) * (1.0 - t.y);

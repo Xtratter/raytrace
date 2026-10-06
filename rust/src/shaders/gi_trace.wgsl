@@ -18,7 +18,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let a = textureLoad(alb_tex, ip, 0);
   if (a.w > 0.5) {
     let g = textureLoad(g_tex, ip, 0);
-    rng = pcg(gid.y * gw + gid.x + P.seed * 747796405u);
+    rng = pcg((gid.y * gw + gid.x + P.seed * 747796405u) ^ 0x9e3779b9u);
     rng = pcg(rng ^ 2747636419u);
     let rd = cam_ray(vec2<f32>(fp) + vec2<f32>(0.5) + P.jitter, P.res, P.cam_pos, P.cam_target, P.fov);
     let p = P.cam_pos + rd * g.x;

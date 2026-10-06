@@ -591,7 +591,7 @@ fn shade_pixel(pix: vec2<f32>) -> vec3<f32> {
   let n = select(max(P.spp, 1u), 1u, g_skip);
   for (var s = 0u; s < n; s = s + 1u) {
     var c = trace(P.cam_pos, rd);
-    if (any(c != c)) { c = vec3<f32>(0.0); }
+    if (is_nan(c.x) || is_nan(c.y) || is_nan(c.z) || any(c != c)) { c = vec3<f32>(0.0); }
     sum += clamp_lum(c, select(10.0, 24.0, P.mode == 1u));
   }
   return sum / f32(n);

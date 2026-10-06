@@ -1,5 +1,7 @@
 //! CPU reference of the temporal blend; `temporal.wgsl` implements the same math.
-pub const LEN_CAP_STILL: f32 = 2048.0;
+/// Rgba16Float history: once n > ~1000, 1/n drops below the f16 half-ULP and the running
+/// mean stalls (and can drift brighter), so the still-PT length is capped well below that.
+pub const LEN_CAP_STILL: f32 = 512.0;
 
 fn sane(c: [f32; 3]) -> [f32; 3] {
     if c.iter().any(|x| !x.is_finite() || x.abs() > 1e4) { [0.0; 3] } else { c }

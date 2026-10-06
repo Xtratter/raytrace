@@ -7,7 +7,8 @@
 @group(0) @binding(4) var hist_in: texture_2d<f32>;
 @group(0) @binding(5) var hist_out: texture_storage_2d<rgba16float, write>;
 
-const LEN_CAP_STILL: f32 = 2048.0;
+// f16 history: 1/n < half-ULP for n > ~1000 stalls convergence; keep in sync with reproj.rs.
+const LEN_CAP_STILL: f32 = 512.0;
 
 fn load_hist(p: vec2<i32>, lim: vec2<i32>) -> vec4<f32> {
   return textureLoad(hist_in, clamp(p, vec2<i32>(0), lim), 0);

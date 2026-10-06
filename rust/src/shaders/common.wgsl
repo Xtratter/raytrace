@@ -72,7 +72,9 @@ fn oct_decode(e: vec2<f32>) -> vec3<f32> {
   return normalize(n);
 }
 
+fn is_nan(x: f32) -> bool { return (bitcast<u32>(x) & 0x7fffffffu) > 0x7f800000u; }
+
 fn sanitize(c: vec3<f32>) -> vec3<f32> {
-  if (any(c != c) || any(abs(c) > vec3<f32>(1e4))) { return vec3<f32>(0.0); }
+  if (is_nan(c.x) || is_nan(c.y) || is_nan(c.z) || any(c != c) || any(abs(c) > vec3<f32>(1e4))) { return vec3<f32>(0.0); }
   return c;
 }

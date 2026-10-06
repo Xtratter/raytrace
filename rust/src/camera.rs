@@ -15,7 +15,7 @@ impl Mode {
 const LOOK_RATE: f32 = 1.6; // rad/s at full deflection
 const MOVE_RATE: f32 = 2.5; // units/s at full deflection
 const FLY_MIN: [f32; 3] = [-5.5, 0.3, -6.5];
-const FLY_MAX: [f32; 3] = [5.5, 8.0, 6.5];
+const FLY_MAX: [f32; 3] = [5.5, 8.0, 12.0];
 
 /// NaN/inf -> 0, each value clamped to [-1, 1].
 pub fn sanitize_sticks(s: [f32; 4]) -> [f32; 4] {
@@ -160,9 +160,9 @@ impl Camera {
         let lr = LOOK_RATE * look_f * dt;
         match self.mode {
             Mode::Orbit => {
-                self.yaw -= rx * lr;
-                // right stick up = pitch down (like dragging up); left stick right = height up at half rate
-                self.pitch = (self.pitch - ry * lr + lx * 0.5 * lr).clamp(0.02, 1.45);
+                self.yaw += rx * lr; // camera moves right (as seen from the camera)
+                // right stick up = camera up; left stick right = camera up at half rate
+                self.pitch = (self.pitch + ry * lr + lx * 0.5 * lr).clamp(0.02, 1.45);
                 self.dist = (self.dist * (-ly * dt * move_f).exp()).clamp(3.0, 14.0);
                 let w = match auto {
                     1 => 0.35,
@@ -345,12 +345,12 @@ mod tests {
         for s in [[0.0, 1.0, 0.0, 0.0], [1.0, -1.0, 0.0, 0.0], [-1.0, 1.0, 0.0, 0.0]] {
             run(&mut c, 400, 0.1, Mode::Fly, s);
             let p = c.pose().0;
-            assert!(p[0].abs() <= 5.5 + 1e-5 && p[1] >= 0.3 - 1e-5 && p[1] <= 8.0 + 1e-5 && p[2].abs() <= 6.5 + 1e-5, "{:?}", p);
+            assert!(p[0].abs() <= 5.5 + 1e-5 && p[1] >= 0.3 - 1e-5 && p[1] <= 8.0 + 1e-5 && p[2] >= -6.5 - 1e-5 && p[2] <= 12.0 + 1e-5, "{:?}", p);
         }
         // touch zoom too
         for _ in 0..200 { c.zoom(0.1); }
         let p = c.pose().0;
-        assert!(p[0].abs() <= 5.5 + 1e-5 && p[2].abs() <= 6.5 + 1e-5);
+        assert!(p[0].abs() <= 5.5 + 1e-5 && p[2] >= -6.5 - 1e-5 && p[2] <= 12.0 + 1e-5);
     }
     #[test]
     fn fly_pitch_clamped_and_target_distinct() {
@@ -376,10 +376,10 @@ mod tests {
     fn orbit_sticks_move_yaw_pitch_dist() {
         let mut c = Camera::new();
         c.update(0.1, 0, Mode::Orbit, [0.0, 0.0, 1.0, 0.0], 1.0, 1.0);
-        assert!((c.yaw - (0.3 - 0.16)).abs() < 1e-5);
+        assert!((c.yaw - (0.3 + 0.16)).abs() < 1e-5);
         let mut c = Camera::new();
         c.update(0.1, 0, Mode::Orbit, [0.0, 0.0, 0.0, 1.0], 1.0, 1.0);
-        assert!((c.pitch - (0.35 - 0.16)).abs() < 1e-5);
+        assert!((c.pitch - (0.35 + 0.16)).abs() < 1e-5);
         let mut c = Camera::new();
         c.update(0.1, 0, Mode::Orbit, [0.0, 1.0, 0.0, 0.0], 1.0, 1.0);
         assert!((c.dist - 10.5 * (-0.1f32).exp()).abs() < 1e-4);
@@ -476,7 +476,7 @@ mod tests {
         assert_eq!(c.mode(), Mode::Fly);
         // orbit untouched by a fly reset
         let mut o = Camera::new();
-        o.orbit(30.0, 0.0);
+        o.orbit(30.0, 0.0); // yaw 0.3-0.18
         o.update(0.0, 0, Mode::Fly, Z, 1.0, 1.0);
         o.reset();
         o.update(0.0, 0, Mode::Orbit, Z, 1.0, 1.0);
@@ -485,5 +485,68 @@ mod tests {
         o.reset();
         assert_eq!((o.yaw, o.pitch, o.dist), (0.3, 0.35, 10.5));
         assert_eq!(o.mode(), Mode::Orbit);
+    }
+}
+
+#[cfg(test)]
+mod sign_tests {
+    use super::*;
+    const Z: [f32; 4] = [0.0; 4];
+    fn cross_up(f: [f32; 3]) -> [f32; 3] { [-f[2], 0.0, f[0]] } // forward x up (horizontal part)
+    fn dirs(c: &Camera) -> ([f32; 3], [f32; 3]) {
+        let (p, t) = c.pose();
+        let d = [t[0] - p[0], t[1] - p[1], t[2] - p[2]];
+        let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        let f = [d[0] / l, d[1] / l, d[2] / l];
+        (f, cross_up(f))
+    }
+    fn dot(a: [f32; 3], b: [f32; 3]) -> f32 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] }
+    #[test]
+    fn fly_default_no_snap_on_first_move() {
+        let mut c = Camera::new();
+        c.update(0.0, 0, Mode::Fly, Z, 1.0, 1.0);
+        let p0 = c.pose().0;
+        c.update(0.016, 0, Mode::Fly, [0.0, 0.2, 0.0, 0.0], 1.0, 1.0);
+        let p1 = c.pose().0;
+        let d = ((p1[0] - p0[0]).powi(2) + (p1[1] - p0[1]).powi(2) + (p1[2] - p0[2]).powi(2)).sqrt();
+        assert!(d <= 2.5 * 0.2 * 0.016 + 1e-4, "snap {d}");
+    }
+    #[test]
+    fn fly_signs_natural() {
+        let mk = || { let mut c = Camera::new(); c.update(0.0, 0, Mode::Fly, Z, 1.0, 1.0); c.fly_pos = [0.0, 2.0, 0.0]; c };
+        let mut c = mk();
+        let (f0, r0) = dirs(&c);
+        c.update(0.1, 0, Mode::Fly, [0.0, 0.0, 1.0, 0.0], 1.0, 1.0); // rx>0 turns right
+        let (f1, _) = dirs(&c);
+        assert!(dot(f1, r0) > 0.1 && dot(f1, f0) > 0.9);
+        let mut c = mk();
+        let y0 = dirs(&c).0[1];
+        c.update(0.1, 0, Mode::Fly, [0.0, 0.0, 0.0, 1.0], 1.0, 1.0); // ry>0 looks up
+        assert!(dirs(&c).0[1] > y0 + 0.1);
+        let mut c = mk();
+        let (f0, r0) = dirs(&c);
+        let p0 = c.pose().0;
+        c.update(0.1, 0, Mode::Fly, [1.0, 0.0, 0.0, 0.0], 1.0, 1.0); // lx>0 strafes right
+        let d = [c.pose().0[0] - p0[0], 0.0, c.pose().0[2] - p0[2]];
+        assert!(dot(d, r0) > 0.2 && dot(d, f0).abs() < 1e-3);
+    }
+    #[test]
+    fn orbit_signs_natural() {
+        let mut c = Camera::new();
+        let (p0, _) = c.pose();
+        let (_, r0) = dirs(&c);
+        c.update(0.1, 0, Mode::Orbit, [0.0, 0.0, 1.0, 0.0], 1.0, 1.0); // rx>0: camera moves right
+        let p1 = c.pose().0;
+        assert!(dot([p1[0] - p0[0], 0.0, p1[2] - p0[2]], r0) > 0.1);
+        let mut c = Camera::new();
+        let h0 = c.pose().0[1];
+        c.update(0.1, 0, Mode::Orbit, [0.0, 0.0, 0.0, 1.0], 1.0, 1.0); // ry>0 raises camera
+        assert!(c.pose().0[1] > h0 && c.pitch > 0.35);
+        let mut c = Camera::new();
+        c.update(0.1, 0, Mode::Orbit, [0.0, 1.0, 0.0, 0.0], 1.0, 1.0); // ly>0 zoom in
+        assert!(c.dist < 10.5);
+        let mut c = Camera::new();
+        c.update(0.1, 0, Mode::Orbit, [1.0, 0.0, 0.0, 0.0], 1.0, 1.0); // lx>0 raises at half rate
+        assert!((c.pitch - 0.43).abs() < 1e-5);
     }
 }

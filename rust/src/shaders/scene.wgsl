@@ -323,10 +323,11 @@ fn isect_sphere(ro: vec3<f32>, rd: vec3<f32>, c: vec3<f32>, r: f32) -> vec2<f32>
   return vec2<f32>(-b - s, -b + s);
 }
 
-// Entering hit of a sphere inside (0, tmax)?
+// Sphere occludes if it is hit before tmax; an origin inside it (surface points within ~0.003 of a
+// sphere touching the floor) counts as occluded, matching the old march.
 fn sph_occ(ro: vec3<f32>, dir: vec3<f32>, c: vec3<f32>, r: f32, tmax: f32) -> bool {
   let s = isect_sphere(ro, dir, c, r);
-  return s.y > 0.0 && s.x < tmax && s.x > 0.0;
+  return s.y > 0.0 && s.x < tmax;
 }
 
 fn map_menger(p: vec3<f32>) -> f32 {

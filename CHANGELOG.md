@@ -2,6 +2,11 @@
 
 [Русский](CHANGELOG.ru.md) · **English**
 
+## 1.3.0 - analytic shadow rays
+
+- Changed: shadow rays use analytic occluders with a broad-phase (spheres, Menger box, torus bound) instead of marching
+- Changed: Balanced default bounces 4
+
 ## 1.2.0 - half-resolution global illumination
 
 - Added: GI resolution setting (Full / Half / Quarter) on the Light tab; it applies only in hybrid mode with GI on (in path-tracing mode GI stays inline; with GI off nothing is deferred); presets: Performance has GI off (resolution irrelevant), Balanced = Half, Quality = Full

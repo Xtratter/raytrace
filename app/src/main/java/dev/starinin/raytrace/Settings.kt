@@ -28,7 +28,7 @@ class Settings(private val kv: KeyValue, private val push: (Int, Float) -> Unit)
         /** Must match ../params.json (checked by SettingsTest). */
         val DEFS = listOf(
             d(0, "mode", 0f, 0f, 1f), d(1, "scale_idx", 1f, 0f, 4f), d(2, "adaptive", 1f, 0f, 1f),
-            d(3, "target_fps", 60f, 30f, 90f), d(4, "bounces", 6f, 1f, 9f), d(5, "spp", 1f, 1f, 4f),
+            d(3, "target_fps", 60f, 30f, 90f), d(4, "bounces", 4f, 1f, 9f), d(5, "spp", 1f, 1f, 4f),
             d(6, "temporal", 1f, 0f, 1f), d(7, "strength", 3f, 1f, 5f), d(8, "denoise", 1f, 0f, 3f),
             d(9, "sharpen", 1f, 0f, 3f), d(10, "checker", 0f, 0f, 1f), d(11, "shadows", 1f, 0f, 1f),
             d(12, "gi", 1f, 0f, 1f), d(13, "caustics", 1f, 0f, 1f), d(14, "reflections", 1f, 0f, 1f),

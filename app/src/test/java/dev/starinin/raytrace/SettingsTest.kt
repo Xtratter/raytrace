@@ -60,6 +60,6 @@ class SettingsTest {
     @Test fun resetRestoresDefaults() {
         val s = Settings(FakeKv()) { _, _ -> }
         s.set(Ids.BOUNCES, 2f); s.reset()
-        assertEquals(6f, s.get(Ids.BOUNCES))
+        assertEquals(4f, s.get(Ids.BOUNCES))
     }
 }

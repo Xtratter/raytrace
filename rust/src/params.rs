@@ -19,7 +19,7 @@ pub const DEFS: [Def; N] = [
     d(1, 1.0, 0.0, 4.0),   // scale_idx
     d(2, 1.0, 0.0, 1.0),   // adaptive
     d(3, 60.0, 30.0, 90.0), // target_fps
-    d(4, 6.0, 1.0, 9.0),   // bounces
+    d(4, 4.0, 1.0, 9.0),   // bounces
     d(5, 1.0, 1.0, 4.0),   // spp
     d(6, 1.0, 0.0, 1.0),   // temporal
     d(7, 3.0, 1.0, 5.0),   // strength

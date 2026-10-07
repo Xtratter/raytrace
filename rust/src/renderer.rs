@@ -25,11 +25,11 @@ pub struct Renderer {
     fps_t: Instant,
     fps_n: u32,
     log_t: Instant,
-    pub stats: Arc<Mutex<[f32; 8]>>,
+    pub stats: Arc<Mutex<[f32; 16]>>,
 }
 
 impl Renderer {
-    pub fn new(gfx: Gfx, win: (u32, u32), stats: Arc<Mutex<[f32; 8]>>) -> Renderer {
+    pub fn new(gfx: Gfx, win: (u32, u32), stats: Arc<Mutex<[f32; 16]>>) -> Renderer {
         let cam = Camera::new();
         let pose = cam.pose();
         Renderer { gfx, store: Store::new(), cam, sticks: [0.0; 4], adaptive: AdaptiveRes::new(0.25, 0.33, 0.33), governor: Governor::new(), warmup: 3, last_ms: 0.0, win,
@@ -118,7 +118,10 @@ impl Renderer {
             let el = self.fps_t.elapsed().as_secs_f32();
             if el >= 0.5 {
                 let fps = self.fps_n as f32 / el;
-                *self.stats.lock().unwrap() = [fps, ms, rw as f32, rh as f32, scale, pt as u32 as f32, 0.0, 0.0];
+                let mut st = [0.0f32; 16];
+                st[..6].copy_from_slice(&[fps, ms, rw as f32, rh as f32, scale, pt as u32 as f32]);
+                st[8..].copy_from_slice(&self.gfx.pass_ms());
+                *self.stats.lock().unwrap() = st;
                 if self.log_t.elapsed().as_secs_f32() >= 2.0 {
                     log::info!("{:.1} fps | gpu {:.1} ms | {}x{} ({:.2}x) | {} | flags {:#x} | bounces {}", fps, ms, rw, rh, scale, if pt { "path" } else { "hybrid" }, flags, s.get(id::BOUNCES));
                     self.log_t = Instant::now();

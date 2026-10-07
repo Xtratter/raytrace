@@ -3,6 +3,7 @@ pub mod camera;
 pub mod gi;
 pub mod halton;
 pub mod params;
+pub mod profile;
 pub mod reproj;
 pub mod shaders;
 #[cfg(target_os = "android")]

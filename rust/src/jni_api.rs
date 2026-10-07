@@ -12,7 +12,7 @@ use crate::{gfx::Gfx, renderer::Renderer};
 
 pub enum Cmd { Param(i32, f32), Orbit(f32, f32), Sticks(f32, f32, f32, f32), Zoom(f32), ResetCam, Resize(u32, u32), Stop }
 
-struct Engine { tx: Sender<Cmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; 8]>> }
+struct Engine { tx: Sender<Cmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; 16]>> }
 
 static ENGINE: Mutex<Option<Engine>> = Mutex::new(None);
 
@@ -27,7 +27,7 @@ pub extern "system" fn Java_dev_starinin_raytrace_Native_start(env: JNIEnv, _c: 
     let win = unsafe { NativeWindow::from_surface(env.get_raw() as *mut _, surface.as_raw() as *mut _) };
     let Some(win) = win else { log::error!("ANativeWindow_fromSurface failed"); return; };
     let (tx, rx) = channel::<Cmd>();
-    let stats = Arc::new(Mutex::new([0.0f32; 8]));
+    let stats = Arc::new(Mutex::new([0.0f32; 16]));
     let st = stats.clone();
     let st2 = stats.clone();
     let (w, h) = (w.max(1) as u32, h.max(1) as u32);
@@ -55,7 +55,7 @@ pub extern "system" fn Java_dev_starinin_raytrace_Native_start(env: JNIEnv, _c: 
             r.frame();
         }
         }));
-        *st2.lock().unwrap() = [0.0; 8];
+        *st2.lock().unwrap() = [0.0; 16];
         if let Err(e) = res {
             let msg = e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default();
             log::error!("render thread panicked (GPU init failure or device loss), rendering stopped: {msg}");
@@ -85,8 +85,8 @@ fn stop_engine() {
 
 #[no_mangle]
 pub extern "system" fn Java_dev_starinin_raytrace_Native_stats(env: JNIEnv, _c: JClass) -> jfloatArray {
-    let s = ENGINE.lock().unwrap().as_ref().map(|e| *e.stats.lock().unwrap()).unwrap_or([0.0; 8]);
-    let arr = env.new_float_array(8).unwrap();
+    let s = ENGINE.lock().unwrap().as_ref().map(|e| *e.stats.lock().unwrap()).unwrap_or([0.0; 16]);
+    let arr = env.new_float_array(16).unwrap();
     env.set_float_array_region(&arr, 0, &s).unwrap();
     arr.into_raw()
 }

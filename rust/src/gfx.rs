@@ -45,6 +45,9 @@ struct Targets {
     gi: Option<GiTargets>,
 }
 
+/// GPU timestamp queries (only when the adapter supports TIMESTAMP_QUERY). Two query slots per pass slot.
+struct Prof { qs: wgpu::QuerySet, resolve: wgpu::Buffer, read: wgpu::Buffer, period: f32 }
+
 pub struct Gfx {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -64,6 +67,8 @@ pub struct Gfx {
     composite_pl: wgpu::ComputePipeline, composite_bgl: wgpu::BindGroupLayout,
     present_pl: wgpu::RenderPipeline, present_bgl: wgpu::BindGroupLayout,
     targets: Option<Targets>,
+    prof: Option<Prof>,
+    pass_ms: [f32; 8],
     _window: NativeWindow, // dropped after `surface` (field order)
 }
 
@@ -119,9 +124,11 @@ impl Gfx {
         })).expect("no GPU adapter");
         let info = adapter.get_info();
         log::info!("adapter: {} ({:?}) {}", info.name, info.backend, info.driver_info);
+        let want = wgpu::Features::TIMESTAMP_QUERY;
+        let has_ts = adapter.features().contains(want);
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("device"),
-            required_features: wgpu::Features::empty(),
+            required_features: if has_ts { want } else { wgpu::Features::empty() },
             required_limits: adapter.limits(),
             memory_hints: wgpu::MemoryHints::Performance,
         }, None)).expect("request_device");
@@ -224,12 +231,25 @@ impl Gfx {
             ..Default::default()
         });
 
+        let prof = if has_ts {
+            let qs = device.create_query_set(&wgpu::QuerySetDescriptor { label: Some("ts"), ty: wgpu::QueryType::Timestamp, count: 16 });
+            let resolve = device.create_buffer(&wgpu::BufferDescriptor { label: Some("ts_resolve"), size: 128,
+                usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
+            let read = device.create_buffer(&wgpu::BufferDescriptor { label: Some("ts_read"), size: 128,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+            Some(Prof { qs, resolve, read, period: queue.get_timestamp_period() })
+        } else { None };
+        log::info!("gpu timestamps: {}", has_ts);
+
         Gfx {
             surface, device, queue, config, modes: caps.present_modes, params_buf, step_bufs, gi_step_bufs, sampler,
             gi_trace_pl, gi_trace_bgl, gi_temporal_pl, gi_temporal_bgl, gi_atrous_pl, gi_atrous_bgl, composite_pl, composite_bgl,
-            trace_pl, trace_bgl, temporal_pl, temporal_bgl, atrous_pl, atrous_bgl, present_pl, present_bgl, targets: None, _window: window,
+            trace_pl, trace_bgl, temporal_pl, temporal_bgl, atrous_pl, atrous_bgl, present_pl, present_bgl, targets: None, prof, pass_ms: [0.0; 8], _window: window,
         }
     }
+
+    /// Per-pass GPU ms of the last frame (slots: trace, gi_trace, gi_temporal, gi_atrous, temporal, atrous, composite, present); 0 = unsupported/unmeasured.
+    pub fn pass_ms(&self) -> [f32; 8] { self.pass_ms }
 
     pub fn is_srgb(&self) -> bool { self.config.format.is_srgb() }
 
@@ -387,46 +407,54 @@ impl Gfx {
             (2, wgpu::BindingResource::Sampler(&self.sampler)),
         ]);
 
+        let prof = self.prof.as_ref();
+        // Compute-pass timestamp writes: slot s uses query indices 2s (begin) and 2s+1 (end); either may be omitted.
+        let cts = |b: Option<u32>, e: Option<u32>| prof.map(|p| wgpu::ComputePassTimestampWrites {
+            query_set: &p.qs, beginning_of_pass_write_index: b, end_of_pass_write_index: e });
+        let slot = |s: u32| cts(Some(2 * s), Some(2 * s + 1));
         let mut enc = dev.create_command_encoder(&Default::default());
         {
-            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("trace"), timestamp_writes: None });
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("trace"), timestamp_writes: slot(0) });
             cp.set_pipeline(&self.trace_pl);
             cp.set_bind_group(0, &trace_bg, &[]);
             cp.dispatch_workgroups(t.w.div_ceil(8), t.h.div_ceil(8), 1);
         }
         if let Some((a, _, _, _, (gw, gh))) = &gi_bgs {
-            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("gi_trace"), timestamp_writes: None });
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("gi_trace"), timestamp_writes: slot(1) });
             cp.set_pipeline(&self.gi_trace_pl);
             cp.set_bind_group(0, a, &[]);
             cp.dispatch_workgroups(gw.div_ceil(8), gh.div_ceil(8), 1);
         }
         {
-            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("temporal"), timestamp_writes: None });
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("temporal"), timestamp_writes: slot(4) });
             cp.set_pipeline(&self.temporal_pl);
             cp.set_bind_group(0, &temporal_bg, &[]);
             cp.dispatch_workgroups(t.w.div_ceil(8), t.h.div_ceil(8), 1);
         }
         if let Some((_, b, c0, c1, (gw, gh))) = &gi_bgs {
-            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("gi_temporal"), timestamp_writes: None });
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("gi_temporal"), timestamp_writes: slot(2) });
             cp.set_pipeline(&self.gi_temporal_pl);
             cp.set_bind_group(0, b, &[]);
             cp.dispatch_workgroups(gw.div_ceil(8), gh.div_ceil(8), 1);
             drop(cp);
-            for abg in [c0, c1] {
-                let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("gi_atrous"), timestamp_writes: None });
+            for (i, abg) in [c0, c1].into_iter().enumerate() {
+                let tw = if i == 0 { cts(Some(6), None) } else { cts(None, Some(7)) };
+                let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("gi_atrous"), timestamp_writes: tw });
                 cp.set_pipeline(&self.gi_atrous_pl);
                 cp.set_bind_group(0, abg, &[]);
                 cp.dispatch_workgroups(gw.div_ceil(8), gh.div_ceil(8), 1);
             }
         }
-        for abg in &atrous_bgs {
-            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("atrous"), timestamp_writes: None });
+        let n_at = atrous_bgs.len();
+        for (i, abg) in atrous_bgs.iter().enumerate() {
+            let tw = cts(if i == 0 { Some(10) } else { None }, if i + 1 == n_at { Some(11) } else { None });
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("atrous"), timestamp_writes: tw });
             cp.set_pipeline(&self.atrous_pl);
             cp.set_bind_group(0, abg, &[]);
             cp.dispatch_workgroups(t.w.div_ceil(8), t.h.div_ceil(8), 1);
         }
         if let Some(cbg) = &comp_bg {
-            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("composite"), timestamp_writes: None });
+            let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("composite"), timestamp_writes: slot(6) });
             cp.set_pipeline(&self.composite_pl);
             cp.set_bind_group(0, cbg, &[]);
             cp.dispatch_workgroups(t.w.div_ceil(8), t.h.div_ceil(8), 1);
@@ -440,17 +468,34 @@ impl Gfx {
                     ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
+                timestamp_writes: prof.map(|p| wgpu::RenderPassTimestampWrites { query_set: &p.qs,
+                    beginning_of_pass_write_index: Some(14), end_of_pass_write_index: Some(15) }),
                 occlusion_query_set: None,
             });
             rp.set_pipeline(&self.present_pl);
             rp.set_bind_group(0, &present_bg, &[]);
             rp.draw(0..3, 0..1);
         }
+        if let Some(p) = prof {
+            enc.resolve_query_set(&p.qs, 0..16, &p.resolve, 0);
+            enc.copy_buffer_to_buffer(&p.resolve, 0, &p.read, 0, 128);
+        }
         let t0 = Instant::now();
         self.queue.submit(Some(enc.finish()));
         self.device.poll(wgpu::Maintain::Wait);
         let ms = t0.elapsed().as_secs_f32() * 1000.0;
+        // The GPU is already waited on each frame, so reading the timestamps adds no new pipeline stall
+        // (deviation from the spec's "one frame late").
+        if let Some(p) = &self.prof {
+            p.read.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+            self.device.poll(wgpu::Maintain::Wait);
+            {
+                let view = p.read.slice(..).get_mapped_range();
+                let ticks: &[u64] = bytemuck::cast_slice(&view);
+                for s in 0..8 { self.pass_ms[s] = crate::profile::ticks_to_ms(ticks[2 * s], ticks[2 * s + 1], p.period); }
+            }
+            p.read.unmap();
+        }
         frame.present();
         ms
     }

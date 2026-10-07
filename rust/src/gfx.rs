@@ -409,8 +409,8 @@ impl Gfx {
 
         let prof = self.prof.as_ref();
         // Compute-pass timestamp writes: slot s uses query indices 2s (begin) and 2s+1 (end); either may be omitted.
-        let cts = |b: Option<u32>, e: Option<u32>| prof.map(|p| wgpu::ComputePassTimestampWrites {
-            query_set: &p.qs, beginning_of_pass_write_index: b, end_of_pass_write_index: e });
+        let cts = |b: Option<u32>, e: Option<u32>| prof.and_then(|p| crate::profile::pass_indices(b, e).map(|(b, e)| wgpu::ComputePassTimestampWrites {
+            query_set: &p.qs, beginning_of_pass_write_index: b, end_of_pass_write_index: e }));
         let slot = |s: u32| cts(Some(2 * s), Some(2 * s + 1));
         let mut enc = dev.create_command_encoder(&Default::default());
         {
@@ -438,7 +438,8 @@ impl Gfx {
             cp.dispatch_workgroups(gw.div_ceil(8), gh.div_ceil(8), 1);
             drop(cp);
             for (i, abg) in [c0, c1].into_iter().enumerate() {
-                let tw = if i == 0 { cts(Some(6), None) } else { cts(None, Some(7)) };
+                let (b, e) = crate::profile::gi_atrous_query_indices(i as u32);
+                let tw = cts(b, e);
                 let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("gi_atrous"), timestamp_writes: tw });
                 cp.set_pipeline(&self.gi_atrous_pl);
                 cp.set_bind_group(0, abg, &[]);
@@ -447,7 +448,8 @@ impl Gfx {
         }
         let n_at = atrous_bgs.len();
         for (i, abg) in atrous_bgs.iter().enumerate() {
-            let tw = cts(if i == 0 { Some(10) } else { None }, if i + 1 == n_at { Some(11) } else { None });
+            let (b, e) = crate::profile::atrous_query_indices(i as u32, n_at as u32);
+            let tw = cts(b, e);
             let mut cp = enc.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("atrous"), timestamp_writes: tw });
             cp.set_pipeline(&self.atrous_pl);
             cp.set_bind_group(0, abg, &[]);

@@ -36,6 +36,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   }
   let off = block_offset(gid.x, gid.y, P.frame, bs);
   let fp = min(vec2<i32>(i32(gid.x * bs + off.x), i32(gid.y * bs + off.y)), flim);
+  // effective in-block offset after clamping fp to the frame (border blocks)
+  let off_eff = vec2<f32>(f32(fp.x - i32(gid.x * bs)), f32(fp.y - i32(gid.y * bs)));
   let gc = textureLoad(g_cur, fp, 0);
   let c = sanitize(cur.rgb);
   var hist = vec3<f32>(0.0);
@@ -55,7 +57,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             && gp.w == gc.w;
       if (ok) {
         // history texels live at block centres: shift pp to the block-centre equivalent
-        let pc = pp + vec2<f32>(f32(bs) * 0.5) - vec2<f32>(f32(off.x), f32(off.y)) - vec2<f32>(0.5);
+        let pc = pp + vec2<f32>(f32(bs) * 0.5) - off_eff - vec2<f32>(0.5);
         let f = pc / f32(bs) - vec2<f32>(0.5);
         let i0 = vec2<i32>(floor(f));
         let t = f - floor(f);

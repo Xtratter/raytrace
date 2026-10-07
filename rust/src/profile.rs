@@ -14,9 +14,46 @@ pub fn slot_offsets(slot: u32) -> (std::ops::Range<u32>, u64, u64) {
     (2 * slot..2 * slot + 2, slot as u64 * RESOLVE_ALIGN, slot as u64 * 16)
 }
 
+/// Timestamp writes for one pass: wgpu rejects a pass whose begin and end indices are both absent,
+/// so such a pass must get no timestamp writes at all (None).
+pub fn pass_indices(b: Option<u32>, e: Option<u32>) -> Option<(Option<u32>, Option<u32>)> {
+    if b.is_none() && e.is_none() { None } else { Some((b, e)) }
+}
+
+/// Query indices for a-trous pass `i` of `n` (the chain shares slot 5: begin on first, end on last pass).
+pub fn atrous_query_indices(i: u32, n: u32) -> (Option<u32>, Option<u32>) {
+    (if i == 0 { Some(10) } else { None }, if i + 1 == n { Some(11) } else { None })
+}
+
+/// Query indices for GI a-trous pass `i` (0..2; slot 3: begin on the first, end on the second).
+pub fn gi_atrous_query_indices(i: u32) -> (Option<u32>, Option<u32>) {
+    if i == 0 { (Some(6), None) } else { (None, Some(7)) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pass_indices_none_when_empty() {
+        assert_eq!(pass_indices(None, None), None);
+        assert_eq!(pass_indices(Some(1), None), Some((Some(1), None)));
+        assert_eq!(pass_indices(None, Some(2)), Some((None, Some(2))));
+    }
+    #[test]
+    fn schedules_valid_and_unique() {
+        let mut cases: Vec<Vec<(Option<u32>, Option<u32>)>> = vec![];
+        for n in 0..=3u32 { cases.push((0..n).map(|i| atrous_query_indices(i, n)).collect()); }
+        cases.push((0..2u32).map(gi_atrous_query_indices).collect());
+        for passes in cases {
+            let mut used = std::collections::HashSet::new();
+            for (b, e) in passes {
+                if let Some((b, e)) = pass_indices(b, e) {
+                    assert!(b.is_some() || e.is_some());
+                    for q in [b, e].into_iter().flatten() { assert!(used.insert(q), "query {q} reused"); }
+                }
+            }
+        }
+    }
     #[test]
     fn slot_offsets_aligned() {
         assert_eq!(slot_offsets(0), (0..2, 0, 0));

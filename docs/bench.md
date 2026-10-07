@@ -77,3 +77,33 @@ Image fidelity, Full vs Half (mean RGB of fixed screenshot regions, 1080x2400 sc
 | Menger cube face | 88.7 / 126.4 / 172.8 | 90.1 / 128.7 / 176.8 |
 
 All regions are within about 1% (cube face about 2%); repeating Full twice differs by less than 1%. With GI off the same regions differ by 5-17% (e.g. whole image 120.9 / 127.4 / 116.6), so the comparison is meaningful. A visual check of silhouettes (spheres, torus, Menger cube) showed no visible halos or leaks at Half with a still camera. Moving-camera behaviour and Quarter softness were not specifically examined.
+
+
+## Results 1.3
+
+**1.3 analytic shadow rays, measured on a device** (POCO F3 / Adreno 650, on-device session 07.10.2026, debug build of commit d66dfc1 = version 1.3.0). Hybrid mode, Half-resolution GI, fixed 0.33x render size 352x792, GI/shadows/caustics/reflections on, camera fixed, animation off, adaptive off, HUD Full. GPU clocks/thermal state vary by roughly 25% between sessions, so only same-session comparisons are meaningful. The 1.2.0 baseline was measured earlier the same day with the same settings.
+
+| Build / setting | fps | GPU ms | Trace pass ms |
+|---|---:|---:|---:|
+| 1.2.0 baseline, bounces 6 | 15.4 (15.2 repeat) | 62.7 (63.4) | 52.5 (52.6) |
+| 1.3.0, bounces 6 (isolates the shadow change) | 20.8 / 20.4 (two runs) | 47.2 / 44.1 | 36.7 / 33.5 (HUD screenshot 34.2) |
+| 1.3.0, Balanced default bounces 4 | 20.7 | 45.4 | 34.7 |
+| 1.3.0, shadows off (control) | 24.3 | 37.3 | 27.1 |
+
+- 1.3.0 vs 1.2.0 at equal bounces (6): about +35% fps, about -28% GPU time, trace pass about -30%.
+- Bounces 6 -> 4 gives only about 2 ms in this scene; the shadow change is the real win.
+- Shadows still cost about 10 ms of the trace pass in 1.3.0 (control above); they were about 24 ms in 1.2.0.
+- Other 1.2.0 trace-pass costs measured earlier (context, 1.2.0): no caustics 43.6 ms; no reflections 39.5 ms; shadows + caustics + reflections all off 8.0 ms.
+- The release build with 1.3.0 clean defaults was NOT measured.
+
+Image fidelity vs 1.2.0 (mean RGB of fixed screenshot regions, bounces 6):
+
+| Region | 1.2.0 | 1.3.0 |
+|---|---|---|
+| Floor near the green wall | 154.6 / 148.8 / 140.7 | 154.0 / 147.6 / 137.7 |
+| Floor near the orange wall | 128.0 / 125.9 / 125.8 | 126.5 / 124.6 / 124.9 |
+| Back wall centre | 182.5 / 178.5 / 170.8 | 182.2 / 178.2 / 170.6 |
+| Whole image | 140.2 / 149.9 / 140.2 | 139.2 / 148.9 / 139.2 |
+| Menger cube face | 90.1 / 128.7 / 176.8 | 88.0 / 126.0 / 174.6 |
+
+All regions are within about 1-2%, slightly darker: exact sponge/blob shadows replace the old solid-box and sphere approximations, and light now passes through the sponge's holes. Visual check: shadows of spheres, torus and Menger cube are present and plausible; no new artifacts with a still camera. Moving-camera behaviour was not specifically examined.

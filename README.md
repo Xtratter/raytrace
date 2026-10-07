@@ -151,6 +151,8 @@ For comparison, the prototype this app grew out of ran at **7.1 fps** (356x767, 
 
 **1.2 (half-resolution GI)**, A/B on the same device, back to back (hybrid, fixed 0.33x, GI on): Full 10.4 fps / GPU 92.7-97.3 ms; Half 14.9-15.4 fps / 62.5-65.5 ms (+46% fps, about -33% GPU time); Quarter 15.7-16.1 fps / 58.9-60.5 ms (+53% fps); GI off 19.3 fps / 51.5 ms. Half stays within about 1% of Full in mean colour of fixed image regions (Menger cube face about 2%). The trace pass is now the main cost (about 52 ms of about 62 ms at Half). Clean defaults on the release build (Balanced, 0.25x floor): 24-25 fps, GPU 36-38 ms, measured in a different session than the 1.1.0 figure, so no speedup is claimed. Details in [docs/bench.md](docs/bench.md).
 
+**1.3 (analytic shadow rays)**, same device and session as the 1.2.0 baseline (hybrid, Half GI, fixed 0.33x, bounces 6): 1.2.0 15.4 fps / GPU 62.7 ms / trace pass 52.5 ms; 1.3.0 20.8 and 20.4 fps / GPU 47.2 and 44.1 ms / trace pass 36.7 and 33.5 ms (about +35% fps, about -28% GPU time, trace pass about -30%). With the new Balanced default of 4 bounces: 20.7 fps / 45.4 ms (bounces 6 -> 4 gives only about 2 ms here; the shadow change is the real win). Shadows off (control): 24.3 fps / 37.3 ms, so shadows still cost about 10 ms of the trace pass (about 24 ms in 1.2.0). Mean colour of fixed image regions stays within about 1-2% of 1.2.0 (slightly darker, exact shadows). The release build with 1.3.0 clean defaults was not measured. Details in [docs/bench.md](docs/bench.md).
+
 ## Known limitations
 
 - Reflections lag slightly in fast motion (reprojection follows the mirror surface, not the reflected object)
@@ -158,6 +160,8 @@ For comparison, the prototype this app grew out of ran at **7.1 fps** (356x767, 
 - Global illumination and shadows use approximations of the Menger sponge (a bounding box / analytic spheres for secondary rays), with some blue speckle and tint on the floor and spheres
 - GI of the rotating Menger sponge lags a few frames behind the motion
 - GI hit shadows are approximate
+- Shadows of the blob pair use two slightly enlarged spheres, so the smooth neck between them casts a slightly thin shadow
+- Short bounded marches for the Menger sponge and torus shadows can leak light on grazing rays when the step budget runs out
 - Quarter-resolution GI can look softer
 - GI keeps its own temporal accumulation (about 7 frames) even when "Temporal smoothing" is switched off
 - GI of fast-moving geometry and silhouettes may smear or halo slightly; no halos or leaks were seen at Half with a still camera, but moving-camera quality, Quarter softness and the sponge GI lag were not specifically verified on a device

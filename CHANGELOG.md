@@ -4,7 +4,7 @@
 
 ## 1.3.0 - analytic shadow rays
 
-- Changed: shadow rays use analytic occluders with a broad-phase (spheres, Menger box, torus bound) instead of marching
+- Changed: shadow rays use analytic occluders with a broad-phase instead of marching the whole scene: spheres are analytic; the Menger box gets a slab test and the torus a bound-sphere test, followed by SHORT bounded marches only when the ray reaches those objects
 - Changed: Balanced default bounces 4
 
 ## 1.2.0 - half-resolution global illumination

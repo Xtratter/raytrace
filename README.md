@@ -63,7 +63,7 @@ The interface is bilingual (English and Russian, follows the system language); t
 | | Sharpen | off / low / medium / high |
 | | Checkerboard | off / on (traces half of the pixels per frame) |
 | Light | Soft shadows, Global illumination, Caustics, Reflections and refraction | off / on |
-| | GI resolution | Full / Half / Quarter (presets: Performance = Quarter, Balanced = Half, Quality = Full) |
+| | GI resolution | Full / Half / Quarter (applies only in hybrid mode with GI on; presets: Performance has GI off so the resolution is irrelevant, Balanced = Half, Quality = Full) |
 | | Lamp brightness | 1-5 |
 | | Lamp A / B colour | six colours each |
 | Scene | Animation | off / on |
@@ -89,13 +89,15 @@ app/ (Gradle, Kotlin)            rust/ (cargo, cdylib libraytrace.so)
   RenderView : SurfaceView  --->   jni_api.rs  JNI entry points, render thread
   SettingsSheet (kit UI)           renderer.rs frame loop, adaptive resolution, camera
   Settings (SharedPreferences)     gfx.rs      wgpu device/surface, passes, buffers
-  uikit/ (android-ui-kit)          shaders/    trace, temporal, atrous, present (WGSL)
+  uikit/ (android-ui-kit)          shaders/    scene helpers, trace, gi_trace, temporal, gi_temporal, gi_atrous, atrous, composite, present (WGSL)
                                    params.rs   id -> value table, clamping, presets
 ```
 
 Per frame (internal resolution = scale x screen): **trace** (compute: radiance + depth / normal / material id, jittered) ->
-**gi_trace** (indirect light at full / half / quarter resolution) -> **temporal** (reproject, validate, clamp, blend, ping-pong history) ->
+**gi_trace** (indirect light, half or quarter resolution only) -> **temporal** (reproject, validate, clamp, blend, ping-pong history) ->
 **gi_temporal** (GI history) -> **gi_atrous** (GI denoise) -> **a-trous** (0-3 passes) -> **composite** (bilateral GI upsample + add) -> **present**
+(gi_trace, gi_temporal, gi_atrous and composite run only in the split case: hybrid mode, GI on, resolution Half or Quarter. With Full, GI is computed inline in the trace pass as in 1.1; with GI off nothing is deferred; in path-tracing mode GI always stays inline.)
+
 (upscale, sharpen, tonemap, dither). Kotlin owns the window, input, UI and persistence; Rust owns the GPU and its own render thread.
 Setting ids are shared by both sides through `params.json` (a unit test on each side checks the lists match).
 `shaders.rs` assembles the WGSL (`common.wgsl` + a pass) and a unit test validates every shader with naga on the host.
@@ -155,6 +157,8 @@ For comparison, the prototype this app grew out of ran at **7.1 fps** (356x767, 
 - GI of the rotating Menger sponge lags a few frames behind the motion
 - GI hit shadows are approximate
 - Quarter-resolution GI can look softer
+- GI keeps its own temporal accumulation (about 7 frames) even when "Temporal smoothing" is switched off
+- GI of fast-moving geometry and silhouettes may smear or halo slightly (not yet checked on a device)
 - 1.2 (half-resolution GI) has not been measured on a device yet: measured results will be added to docs/bench.md after the on-device A/B (section pending)
 - Dotted lines along the room wall edges are visible and were not investigated
 - Very heavy settings are scaled down automatically by a safety governor (lower resolution, 1 sample per pixel) until frames get fast again, so the image can look coarser than the chosen scale

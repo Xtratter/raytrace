@@ -187,6 +187,10 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
         toggle(t("Soft shadows", "Мягкие тени"), Ids.SHADOWS)
         toggle(t("Global illumination", "Глобальное освещение"), Ids.GI)
         chips(t("GI resolution", "Разрешение GI"), Ids.GI_RES, listOf(t("Full", "Полное") to 0f, t("Half", "Половина") to 1f, t("Quarter", "Четверть") to 2f))
+        content.addView(TextView(context).apply {
+            text = t("Applies in hybrid mode with GI on", "Действует в гибридном режиме при включённом GI")
+            textSize = 12f; setTextColor(M3.TEXT2); setPadding(px(20f), 0, px(16f), px(4f))
+        })
         toggle(t("Caustics", "Каустики"), Ids.CAUSTICS)
         toggle(t("Reflections & refraction", "Отражения и преломление"), Ids.REFLECTIONS)
         stepper(t("Light intensity", "Яркость ламп"), Ids.LIGHT, 1f) { listOf("0.5×", "0.75×", "1×", "1.5×", "2×")[it.toInt() - 1] }

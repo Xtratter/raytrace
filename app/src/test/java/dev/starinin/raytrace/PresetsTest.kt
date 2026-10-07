@@ -42,4 +42,17 @@ class PresetsTest {
         for (i in listOf(-1, 3, 99)) Presets.apply(st, i)
         for (d in Settings.DEFS) assertEquals(d.key, before[d.id], st.get(d.id))
     }
+
+    @Test fun presetsSetGiResolution() {
+        val st = s()
+        Presets.apply(st, 0); assertEquals(2f, st.get(Ids.GI_RES))
+        Presets.apply(st, 1); assertEquals(1f, st.get(Ids.GI_RES))
+        Presets.apply(st, 2); assertEquals(0f, st.get(Ids.GI_RES))
+    }
+
+    @Test fun editingGiResolutionMarksCustom() {
+        val st = s(); Presets.apply(st, 1)
+        Presets.touch(st, Ids.GI_RES)
+        assertEquals(3f, st.get(Ids.PRESET))
+    }
 }

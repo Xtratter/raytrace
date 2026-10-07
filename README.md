@@ -20,6 +20,8 @@ The interface is bilingual (English and Russian, follows the system language); t
   *Path tracing* (progressive: converges to a clean image when the camera is still)
 - **Temporal reprojection**: history is reprojected with the previous camera, validated by depth, normal and material id,
   clamped to the neighbourhood colour range and blended by history length; sub-pixel jitter (Halton) gives anti-aliasing
+- **Half-resolution GI**: global illumination is traced in its own pass at half or quarter resolution, accumulated temporally, denoised with a-trous and bilateral-upsampled to the full image
+- **Per-pass GPU timings** in the HUD "Full" mode (when the driver supports timestamp queries)
 - **A-trous denoiser**: 0-3 edge-stopping passes (depth, normal, luminance), checker edges are preserved
 - **Safety governor**: heavy settings (e.g. path tracing at 1.0x with many samples and bounces) are scaled down automatically when a frame takes more than ~1.2 s, then recover slowly
 - **Adaptive resolution**: pick a target fps (30 / 45 / 60 / 90); the render scale moves between 0.25x and your chosen maximum
@@ -61,6 +63,7 @@ The interface is bilingual (English and Russian, follows the system language); t
 | | Sharpen | off / low / medium / high |
 | | Checkerboard | off / on (traces half of the pixels per frame) |
 | Light | Soft shadows, Global illumination, Caustics, Reflections and refraction | off / on |
+| | GI resolution | Full / Half / Quarter (presets: Performance = Quarter, Balanced = Half, Quality = Full) |
 | | Lamp brightness | 1-5 |
 | | Lamp A / B colour | six colours each |
 | Scene | Animation | off / on |
@@ -91,7 +94,8 @@ app/ (Gradle, Kotlin)            rust/ (cargo, cdylib libraytrace.so)
 ```
 
 Per frame (internal resolution = scale x screen): **trace** (compute: radiance + depth / normal / material id, jittered) ->
-**temporal** (reproject, validate, clamp, blend, ping-pong history) -> **a-trous** (0-3 passes) -> **present**
+**gi_trace** (indirect light at full / half / quarter resolution) -> **temporal** (reproject, validate, clamp, blend, ping-pong history) ->
+**gi_temporal** (GI history) -> **gi_atrous** (GI denoise) -> **a-trous** (0-3 passes) -> **composite** (bilateral GI upsample + add) -> **present**
 (upscale, sharpen, tonemap, dither). Kotlin owns the window, input, UI and persistence; Rust owns the GPU and its own render thread.
 Setting ids are shared by both sides through `params.json` (a unit test on each side checks the lists match).
 `shaders.rs` assembles the WGSL (`common.wgsl` + a pass) and a unit test validates every shader with naga on the host.
@@ -148,6 +152,10 @@ For comparison, the prototype this app grew out of ran at **7.1 fps** (356x767, 
 - Reflections lag slightly in fast motion (reprojection follows the mirror surface, not the reflected object)
 - Menger sponge rotation can leave ghosting that the neighbourhood clamp only partly removes
 - Global illumination and shadows use approximations of the Menger sponge (a bounding box / analytic spheres for secondary rays), with some blue speckle and tint on the floor and spheres
+- GI of the rotating Menger sponge lags a few frames behind the motion
+- GI hit shadows are approximate
+- Quarter-resolution GI can look softer
+- 1.2 (half-resolution GI) has not been measured on a device yet: measured results will be added to docs/bench.md after the on-device A/B (section pending)
 - Dotted lines along the room wall edges are visible and were not investigated
 - Very heavy settings are scaled down automatically by a safety governor (lower resolution, 1 sample per pixel) until frames get fast again, so the image can look coarser than the chosen scale
 - Fly mode is clamped to the room box (x ±5.5, y 0.3..8, z -6.5..12) and has no collision with objects

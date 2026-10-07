@@ -47,3 +47,7 @@ POCO F3 (Adreno 650), 18:21-18:25, release build, clean defaults: Balanced prese
 - Comparison with the prototype (7.1 fps, 356x767, hybrid, before any changes): about 3x on clean defaults (22.5 vs 7.1) at a lower internal resolution (0.25x vs 0.33x) with better image quality (temporal reprojection, denoiser). The earlier 13x / 90+ fps claims are withdrawn.
 - A safety governor scales heavy settings down automatically when a frame takes more than ~1.2 s.
 
+
+## 1.2 half-resolution GI (pending)
+
+Not yet measured on a device. Plan: A/B on the same device in one session, fixed camera, animation off, clean defaults; run gi_res 0 (Full), 1 (Half), 2 (Quarter) back to back and record fps, GPU ms and the per-pass timings from the HUD "Full" mode. Results will be added here.

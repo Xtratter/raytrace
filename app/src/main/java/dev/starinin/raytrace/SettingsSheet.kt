@@ -186,6 +186,7 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
     private fun light() {
         toggle(t("Soft shadows", "Мягкие тени"), Ids.SHADOWS)
         toggle(t("Global illumination", "Глобальное освещение"), Ids.GI)
+        chips(t("GI resolution", "Разрешение GI"), Ids.GI_RES, listOf(t("Full", "Полное") to 0f, t("Half", "Половина") to 1f, t("Quarter", "Четверть") to 2f))
         toggle(t("Caustics", "Каустики"), Ids.CAUSTICS)
         toggle(t("Reflections & refraction", "Отражения и преломление"), Ids.REFLECTIONS)
         stepper(t("Light intensity", "Яркость ламп"), Ids.LIGHT, 1f) { listOf("0.5×", "0.75×", "1×", "1.5×", "2×")[it.toInt() - 1] }

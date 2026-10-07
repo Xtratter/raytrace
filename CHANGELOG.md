@@ -4,8 +4,8 @@
 
 ## 1.2.0 - half-resolution global illumination
 
-- Added: GI resolution setting (Full / Half / Quarter) on the Light tab; presets set it (Performance = Quarter, Balanced = Half, Quality = Full)
-- Added: half/quarter-resolution GI pass with its own temporal accumulation, a-trous denoise and bilateral upsampling
+- Added: GI resolution setting (Full / Half / Quarter) on the Light tab; it applies only in hybrid mode with GI on (in path-tracing mode GI stays inline; with GI off nothing is deferred); presets: Performance has GI off (resolution irrelevant), Balanced = Half, Quality = Full
+- Added: half/quarter-resolution GI passes (gi_trace, gi_temporal, gi_atrous, composite; they run only for Half/Quarter, "Full" computes GI inline in the trace pass as in 1.1) with their own temporal accumulation, a-trous denoise and bilateral upsampling
 - Added: per-pass GPU timings in the HUD "Full" mode (when timestamp queries are supported)
 - Changed: default GI is half resolution
 

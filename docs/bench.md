@@ -107,3 +107,12 @@ Image fidelity vs 1.2.0 (mean RGB of fixed screenshot regions, bounces 6):
 | Menger cube face | 90.1 / 128.7 / 176.8 | 88.0 / 126.0 / 174.6 |
 
 All regions are within about 1-2%, slightly darker: exact sponge/blob shadows replace the old solid-box and sphere approximations, and light now passes through the sponge's holes. Visual check: shadows of spheres, torus and Menger cube are present and plausible; no new artifacts with a still camera. Moving-camera behaviour was not specifically examined.
+
+## Tried after 1.3.0 and dropped (07.10.2026, same-session A/B on the device)
+
+Per-pass profile of 1.3.0 (trace pass, ms): caustics ~10, reflections/glass chains ~13, shadows ~10 (down from ~24 in 1.2.0). Experiments (branch `exp/perf-14-caustic-tiles`, not released):
+- Caustics at half rate chosen per pixel (`rnd() < 0.5`): no gain (46.8-47.0 ms vs 45.4 ms) — on a GPU, pixels of one wave execute the branch anyway (divergence).
+- The same on alternating 8x8 tiles (one workgroup per tile) plus an early reject for pixels that cannot see the glass sphere: A/B back to back, 1.3.0 vs this build: GPU 43.7 / 46.3 ms vs 46.8 / 48.7 ms, trace pass 33.3 / 35.5 ms vs 35.7 / 37.5 ms — about 5% SLOWER, so dropped.
+- Smaller step budgets for deep reflection rays (72/48/32): no measurable change, dropped.
+- Performance preset with GI at Quarter: 40.0 fps vs 52.9 fps with GI off (+3.8 ms) — not adopted (the preset stays GI off).
+Lesson: the Adreno 650 does not turn stochastic or tiled skipping of a small branch into time savings here; the next real gains need structural changes (splitting the trace pass, cheaper reflection chains) rather than skipping work per pixel.

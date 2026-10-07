@@ -233,7 +233,7 @@ impl Gfx {
 
         let prof = if has_ts {
             let qs = device.create_query_set(&wgpu::QuerySetDescriptor { label: Some("ts"), ty: wgpu::QueryType::Timestamp, count: 16 });
-            let resolve = device.create_buffer(&wgpu::BufferDescriptor { label: Some("ts_resolve"), size: 128,
+            let resolve = device.create_buffer(&wgpu::BufferDescriptor { label: Some("ts_resolve"), size: 8 * crate::profile::RESOLVE_ALIGN,
                 usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
             let read = device.create_buffer(&wgpu::BufferDescriptor { label: Some("ts_read"), size: 128,
                 usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
@@ -476,9 +476,14 @@ impl Gfx {
             rp.set_bind_group(0, &present_bg, &[]);
             rp.draw(0..3, 0..1);
         }
+        // Resolve only slots whose passes were encoded this frame (never-written queries must not be resolved).
+        let ran = [true, gi_bgs.is_some(), gi_bgs.is_some(), gi_bgs.is_some(), true, n_at > 0, comp_bg.is_some(), true];
         if let Some(p) = prof {
-            enc.resolve_query_set(&p.qs, 0..16, &p.resolve, 0);
-            enc.copy_buffer_to_buffer(&p.resolve, 0, &p.read, 0, 128);
+            for s in (0..8u32).filter(|s| ran[*s as usize]) {
+                let (q, ro, rd) = crate::profile::slot_offsets(s);
+                enc.resolve_query_set(&p.qs, q, &p.resolve, ro);
+                enc.copy_buffer_to_buffer(&p.resolve, ro, &p.read, rd, 16);
+            }
         }
         let t0 = Instant::now();
         self.queue.submit(Some(enc.finish()));
@@ -486,15 +491,20 @@ impl Gfx {
         let ms = t0.elapsed().as_secs_f32() * 1000.0;
         // The GPU is already waited on each frame, so reading the timestamps adds no new pipeline stall
         // (deviation from the spec's "one frame late").
+        self.pass_ms = [0.0; 8];
         if let Some(p) = &self.prof {
-            p.read.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+            let ok = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let ok2 = ok.clone();
+            p.read.slice(..).map_async(wgpu::MapMode::Read, move |r| ok2.store(r.is_ok(), std::sync::atomic::Ordering::SeqCst));
             self.device.poll(wgpu::Maintain::Wait);
-            {
-                let view = p.read.slice(..).get_mapped_range();
-                let ticks: &[u64] = bytemuck::cast_slice(&view);
-                for s in 0..8 { self.pass_ms[s] = crate::profile::ticks_to_ms(ticks[2 * s], ticks[2 * s + 1], p.period); }
+            if ok.load(std::sync::atomic::Ordering::SeqCst) {
+                {
+                    let view = p.read.slice(..).get_mapped_range();
+                    let ticks: &[u64] = bytemuck::cast_slice(&view);
+                    for s in (0..8).filter(|s| ran[*s]) { self.pass_ms[s] = crate::profile::ticks_to_ms(ticks[2 * s], ticks[2 * s + 1], p.period); }
+                }
+                p.read.unmap();
             }
-            p.read.unmap();
         }
         frame.present();
         ms

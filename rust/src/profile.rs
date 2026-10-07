@@ -6,9 +6,23 @@ pub fn ticks_to_ms(begin: u64, end: u64, period_ns: f32) -> f32 {
     ((end - begin) as f64 * period_ns as f64 / 1.0e6) as f32
 }
 
+/// wgpu::QUERY_RESOLVE_BUFFER_ALIGNMENT (wgpu-types 24, lib.rs:57).
+pub const RESOLVE_ALIGN: u64 = 256;
+
+/// Per pass slot: (query index range, resolve-buffer byte offset, readback byte offset).
+pub fn slot_offsets(slot: u32) -> (std::ops::Range<u32>, u64, u64) {
+    (2 * slot..2 * slot + 2, slot as u64 * RESOLVE_ALIGN, slot as u64 * 16)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn slot_offsets_aligned() {
+        assert_eq!(slot_offsets(0), (0..2, 0, 0));
+        assert_eq!(slot_offsets(3), (6..8, 768, 48));
+        for s in 0..8 { assert_eq!(slot_offsets(s).1 % RESOLVE_ALIGN, 0); }
+    }
     #[test]
     fn converts_and_guards() {
         assert!((ticks_to_ms(1_000, 2_001_000, 1.0) - 2.0).abs() < 1e-4);

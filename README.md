@@ -149,6 +149,8 @@ For comparison, the prototype this app grew out of ran at **7.1 fps** (356x767, 
 **progressive** mode, meant for a still camera. The safety governor scales heavy settings down automatically. The Menger-sponge shadow step budget
 (`MENGER_SHADOW_STEPS = 24`) and the exact-march variant made no measurable difference in the final check (22.4 vs 22.5 fps).
 
+**1.2 (half-resolution GI)**, A/B on the same device, back to back (hybrid, fixed 0.33x, GI on): Full 10.4 fps / GPU 92.7-97.3 ms; Half 14.9-15.4 fps / 62.5-65.5 ms (+46% fps, about -33% GPU time); Quarter 15.7-16.1 fps / 58.9-60.5 ms (+53% fps); GI off 19.3 fps / 51.5 ms. Half stays within about 1% of Full in mean colour of fixed image regions (Menger cube face about 2%). The trace pass is now the main cost (about 52 ms of about 62 ms at Half). Clean defaults on the release build (Balanced, 0.25x floor): 24-25 fps, GPU 36-38 ms, measured in a different session than the 1.1.0 figure, so no speedup is claimed. Details in [docs/bench.md](docs/bench.md).
+
 ## Known limitations
 
 - Reflections lag slightly in fast motion (reprojection follows the mirror surface, not the reflected object)
@@ -158,12 +160,11 @@ For comparison, the prototype this app grew out of ran at **7.1 fps** (356x767, 
 - GI hit shadows are approximate
 - Quarter-resolution GI can look softer
 - GI keeps its own temporal accumulation (about 7 frames) even when "Temporal smoothing" is switched off
-- GI of fast-moving geometry and silhouettes may smear or halo slightly (not yet checked on a device)
-- 1.2 (half-resolution GI) has not been measured on a device yet: measured results will be added to docs/bench.md after the on-device A/B (section pending)
+- GI of fast-moving geometry and silhouettes may smear or halo slightly; no halos or leaks were seen at Half with a still camera, but moving-camera quality, Quarter softness and the sponge GI lag were not specifically verified on a device
 - Dotted lines along the room wall edges are visible and were not investigated
 - Very heavy settings are scaled down automatically by a safety governor (lower resolution, 1 sample per pixel) until frames get fast again, so the image can look coarser than the chosen scale
 - Fly mode is clamped to the room box (x ±5.5, y 0.3..8, z -6.5..12) and has no collision with objects
-- The on-screen sticks are covered by unit tests only; they have not been checked on a device yet
+- The on-screen sticks are covered by unit tests only; the stick and touch feel remain untested by the maintainer
 - Needs Vulkan 1.1 and an Adreno-class GPU; arm64 only
 - No Vulkan-unavailable screen: the app logs the error and shows a black surface
 

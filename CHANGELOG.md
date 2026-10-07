@@ -8,6 +8,7 @@
 - Added: half/quarter-resolution GI passes (gi_trace, gi_temporal, gi_atrous, composite; they run only for Half/Quarter, "Full" computes GI inline in the trace pass as in 1.1) with their own temporal accumulation, a-trous denoise and bilateral upsampling
 - Added: per-pass GPU timings in the HUD "Full" mode (when timestamp queries are supported)
 - Changed: default GI is half resolution
+- Measured: on POCO F3 at fixed 0.33x hybrid, Half is +46% fps vs Full (10.4 -> 15.2 fps), Quarter +53%; see docs/bench.md
 
 ## 1.1.0 - on-screen sticks and fly camera
 

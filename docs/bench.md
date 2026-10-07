@@ -48,6 +48,32 @@ POCO F3 (Adreno 650), 18:21-18:25, release build, clean defaults: Balanced prese
 - A safety governor scales heavy settings down automatically when a frame takes more than ~1.2 s.
 
 
-## 1.2 half-resolution GI (pending)
+## 1.2 half-resolution GI (results)
 
-Not yet measured on a device. Plan: A/B on the same device in one session, fixed camera, animation off, clean defaults; run gi_res 0 (Full), 1 (Half), 2 (Quarter) back to back and record fps, GPU ms and the per-pass timings from the HUD "Full" mode. Results will be added here.
+**1.2 half-resolution GI, measured on a device** (POCO F3 / Adreno 650, on-device session 07.10.2026, debug build of commit 6ca912e = version 1.2.0). Hybrid mode, fixed 0.33x render size 352x792, bounces 6, GI/shadows/caustics/reflections on, camera fixed, animation off, adaptive off, HUD Full. Sequence run back to back: gi_res 0, 1, 2, 1, 0. GPU clocks/thermal state vary by roughly 25% between sessions, so only these back-to-back numbers are compared.
+
+| GI resolution | fps | GPU ms | Note |
+|---|---:|---:|---|
+| 0 Full (GI inline in the trace pass, 1.1.0 behaviour) | 10.4 | 92.7-97.3 | two runs |
+| 1 Half | 14.9-15.4 | 62.5-65.5 | two runs; +46% fps (10.4 -> 15.2), about -33% GPU time vs Full |
+| 2 Quarter | 15.7-16.1 | 58.9-60.5 | +53% fps vs Full |
+| GI off (control, 12=0) | 19.3 | 51.5 | |
+
+- Per-pass times from the HUD, Full: trace 90.0, temporal 0.7, atrous 2.0, present 2.4 ms.
+- Per-pass times, Half: trace 51.9, gi_trace 0.4, gi_temporal 0.3, gi_atrous 3.4, temporal 0.7, atrous 2.0, composite 0.5, present 2.4 ms.
+- Quarter is only slightly better than Half because the trace pass (primary, direct light, caustics, reflections), not GI, is now the dominant cost: about 52 ms of about 62 ms at Half. This is the next bottleneck.
+- Per-pass GPU timestamps are supported on the Adreno 650 (HUD Full shows them).
+- Denoiser passes = 3 with Half: 14.3-14.5 fps, no crash (the timestamp fix works with timestamps supported on this GPU).
+- Clean defaults (release build, Balanced preset, adaptive resolution at its 0.25x floor, 264x600): 24-25 fps, GPU 36-38 ms. The earlier 1.1.0 clean-defaults figure (22-23 fps) was measured in a different session, so this is not a controlled comparison and no speedup is claimed from these two numbers.
+
+Image fidelity, Full vs Half (mean RGB of fixed screenshot regions, 1080x2400 screenshots):
+
+| Region | Full | Half |
+|---|---|---|
+| Floor near the green wall | 155.2 / 149.4 / 141.4 | 154.6 / 148.8 / 140.7 |
+| Floor near the orange wall | 128.9 / 126.7 / 126.2 | 128.0 / 125.9 / 125.8 |
+| Back wall centre | 182.5 / 178.4 / 170.2 | 182.5 / 178.5 / 170.8 |
+| Whole image | 140.6 / 150.3 / 140.4 | 140.2 / 149.9 / 140.2 |
+| Menger cube face | 88.7 / 126.4 / 172.8 | 90.1 / 128.7 / 176.8 |
+
+All regions are within about 1% (cube face about 2%); repeating Full twice differs by less than 1%. With GI off the same regions differ by 5-17% (e.g. whole image 120.9 / 127.4 / 116.6), so the comparison is meaningful. A visual check of silhouettes (spheres, torus, Menger cube) showed no visible halos or leaks at Half with a still camera. Moving-camera behaviour and Quarter softness were not specifically examined.

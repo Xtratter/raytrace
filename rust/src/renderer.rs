@@ -123,7 +123,7 @@ impl Renderer {
                 st[8..].copy_from_slice(&self.gfx.pass_ms());
                 *self.stats.lock().unwrap() = st;
                 if self.log_t.elapsed().as_secs_f32() >= 2.0 {
-                    log::info!("{:.1} fps | gpu {:.1} ms | {}x{} ({:.2}x) | {} | flags {:#x} | bounces {}", fps, ms, rw, rh, scale, if pt { "path" } else { "hybrid" }, flags, s.get(id::BOUNCES));
+                    log::info!("{:.1} fps | gpu {:.1} ms | {}x{} ({:.2}x) | {} | flags {:#x} | bounces {}{}", fps, ms, rw, rh, scale, if pt { "path" } else { "hybrid" }, flags, s.get(id::BOUNCES), crate::profile::format_pass_ms(&self.gfx.pass_ms()));
                     self.log_t = Instant::now();
                 }
                 self.fps_n = 0;

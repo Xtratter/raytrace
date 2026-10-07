@@ -30,6 +30,15 @@ pub fn gi_atrous_query_indices(i: u32) -> (Option<u32>, Option<u32>) {
     if i == 0 { (Some(6), None) } else { (None, Some(7)) }
 }
 
+/// Log suffix with per-pass GPU times (tr gi gt ga tm at cm pr); empty when all are zero.
+pub fn format_pass_ms(p: &[f32; 8]) -> String {
+    if p.iter().all(|&v| v == 0.0) { return String::new(); }
+    const N: [&str; 8] = ["tr", "gi", "gt", "ga", "tm", "at", "cm", "pr"];
+    let mut s = String::from(" |");
+    for (n, v) in N.iter().zip(p) { s.push_str(&format!(" {} {:.1}", n, v)); }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,5 +76,12 @@ mod tests {
         assert_eq!(ticks_to_ms(0, 5, 1.0), 0.0);
         assert_eq!(ticks_to_ms(9, 5, 1.0), 0.0);
         assert_eq!(ticks_to_ms(1, 5, f32::NAN), 0.0);
+    }
+
+    #[test]
+    fn format_pass_ms_cases() {
+        assert_eq!(format_pass_ms(&[0.0; 8]), "");
+        assert_eq!(format_pass_ms(&[51.94, 0.4, 0.3, 3.4, 0.7, 2.0, 0.5, 2.4]),
+            " | tr 51.9 gi 0.4 gt 0.3 ga 3.4 tm 0.7 at 2.0 cm 0.5 pr 2.4");
     }
 }

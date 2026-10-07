@@ -61,13 +61,13 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
 
     if (m.kind == 0u) {
       if (!pt) {
-        var lo = direct_light(p, nf, select(16, MENGER_SHADOW_STEPS, abs(h.y - 5.0) < 0.5), abs(h.y - 5.0) < 0.5);
+        var lo = direct_light(p, nf, select(16, MENGER_SHADOW_STEPS, abs(h.y - 5.0) < 0.5), abs(h.y - 5.0) < 0.5, h.y);
         if (has(F_CAUSTICS)) { lo += caustic(p, nf); }
         if (has(F_GI) && g_alb.w < 0.5) { lo += indirect(p, nf); }
         col += thr * m.albedo * lo;
         break;
       }
-      col += thr * m.albedo * direct_light(p, nf, MAX_STEPS, true);
+      col += thr * m.albedo * direct_light(p, nf, MAX_STEPS, true, h.y);
       if (!has(F_GI)) { break; }
       diff_seen = true;
       thr = thr * m.albedo;

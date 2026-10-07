@@ -323,9 +323,87 @@ fn isect_sphere(ro: vec3<f32>, rd: vec3<f32>, c: vec3<f32>, r: f32) -> vec2<f32>
   return vec2<f32>(-b - s, -b + s);
 }
 
+// Entering hit of a sphere inside (0, tmax)?
+fn sph_occ(ro: vec3<f32>, dir: vec3<f32>, c: vec3<f32>, r: f32, tmax: f32) -> bool {
+  let s = isect_sphere(ro, dir, c, r);
+  return s.y > 0.0 && s.x < tmax && s.x > 0.0;
+}
+
+fn map_menger(p: vec3<f32>) -> f32 {
+  let q = rot_y(p - vec3<f32>(-0.4, 1.1, -4.2), P.time * 0.25);
+  return sd_menger(q * (1.0 / 1.1)) * 1.1;
+}
+
+// exact short march of the sponge inside its box interval
+fn menger_occ(ro: vec3<f32>, dir: vec3<f32>, tmax: f32) -> bool {
+  let a = P.time * 0.25;
+  let o = rot_y(ro - vec3<f32>(-0.4, 1.1, -4.2), a);
+  let d = rot_y(dir, a);
+  let inv = vec3<f32>(1.0) / select(d, vec3<f32>(1e-6), abs(d) < vec3<f32>(1e-6));
+  let ta = (vec3<f32>(-1.1) - o) * inv;
+  let tb = (vec3<f32>(1.1) - o) * inv;
+  let t0 = max(max(min(ta.x, tb.x), min(ta.y, tb.y)), min(ta.z, tb.z));
+  let t1 = min(min(max(ta.x, tb.x), max(ta.y, tb.y)), max(ta.z, tb.z));
+  let te = min(t1, tmax);
+  if (t1 <= 0.0 || t0 >= tmax || t0 > t1) {
+    return false;
+  }
+  var t = max(t0, 0.0);
+  for (var i = 0; i < MENGER_SHADOW_STEPS; i = i + 1) {
+    let dd = map_menger(ro + dir * t);
+    if (dd < 0.0005 * (1.0 + t)) {
+      return true;
+    }
+    t = t + dd;
+    if (t > te) {
+      return false;
+    }
+  }
+  return false;
+}
+
+fn torus_occ(ro: vec3<f32>, dir: vec3<f32>, tmax: f32) -> bool {
+  let c = vec3<f32>(3.1, 0.3, -0.6);
+  let s = isect_sphere(ro, dir, c, 1.25);
+  if (s.y <= 0.0 || s.x >= tmax) {
+    return false;
+  }
+  let te = min(s.y, tmax);
+  var t = max(s.x, 0.02);
+  for (var i = 0; i < 16; i = i + 1) {
+    let dd = sd_torus(ro + dir * t - c, vec2<f32>(0.85, 0.3));
+    if (dd < 0.0005 * (1.0 + t)) {
+      return true;
+    }
+    t = t + dd;
+    if (t > te) {
+      return false;
+    }
+  }
+  return false;
+}
+
+// Analytic shadow test for the hybrid path: all real occluders are simple. Floor/walls never occlude.
+fn shadow_occluded(ro: vec3<f32>, dir: vec3<f32>, tmax: f32, id: f32) -> bool {
+  if (sph_occ(ro, dir, MIRROR_C, 1.0, tmax) || sph_occ(ro, dir, GLASS_C, GLASS_R, tmax)
+      || sph_occ(ro, dir, LA_C, LA_R, tmax) || sph_occ(ro, dir, LB_C, LB_R, tmax)) {
+    return true;
+  }
+  if (abs(id - 3.0) > 0.5) {
+    if (sph_occ(ro, dir, vec3<f32>(-0.2, 0.5, -1.8), 0.52, tmax)
+        || sph_occ(ro, dir, vec3<f32>(0.5, 0.42, -1.6), 0.44, tmax)) {
+      return true;
+    }
+  }
+  if (abs(id - 5.0) > 0.5 && menger_occ(ro, dir, tmax)) {
+    return true;
+  }
+  return torus_occ(ro, dir, tmax);
+}
+
 // Next-event estimation: returns E/pi (multiply by albedo). Glass is opaque for shadows,
 // light passing through it is handled by caustic() (hybrid) or BSDF paths (path tracing).
-fn direct_light(p: vec3<f32>, n: vec3<f32>, steps: i32, exact: bool) -> vec3<f32> {
+fn direct_light(p: vec3<f32>, n: vec3<f32>, steps: i32, exact: bool, id: f32) -> vec3<f32> {
   let li = select(0u, 1u, rnd() < 0.5);
   let c = light_c(li);
   let r = light_r(li);
@@ -346,10 +424,12 @@ fn direct_light(p: vec3<f32>, n: vec3<f32>, steps: i32, exact: bool) -> vec3<f32
     return vec3<f32>(0.0);
   }
   if (has(F_SHADOWS)) {
-    var sh: vec3<f32>;
-    if (exact) { sh = march_n(ro, dir, 1.0, hs.x - 0.01, steps); }
-    else { sh = march_gi(ro, dir, 1.0, hs.x - 0.01, steps); }
-    if (sh.z > 0.5) {
+    if (exact) {
+      let sh = march_n(ro, dir, 1.0, hs.x - 0.01, steps);
+      if (sh.z > 0.5) {
+        return vec3<f32>(0.0);
+      }
+    } else if (shadow_occluded(ro, dir, hs.x - 0.01, id)) {
       return vec3<f32>(0.0);
     }
   }

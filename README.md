@@ -124,6 +124,18 @@ export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
 (cd rust && cargo test --lib)   # host unit tests, no device needed
 ```
 
+## Linux desktop (x86-64)
+
+The same renderer runs on desktop Linux (tested target: Manjaro / Arch, any Vulkan 1.1 GPU) as `raytrace-desktop`: a winit window with an
+egui settings panel (same tabs, presets and languages as the Android app; the language follows `LANG`, override with `RAYTRACE_LANG=en|ru`).
+Settings are saved to `~/.config/raytrace/settings.ini`.
+
+- **Mouse**: drag to look/orbit, wheel to zoom. **Keys** (layout independent): W A S D = left stick, arrows = right stick, Tab = panel, F = fullscreen, H = HUD, R = reset camera, Esc = quit
+- **Install**: download `raytrace-<version>-linux-x86_64.tar.gz` or the `Raytrace-<version>-x86_64.AppImage` from the Releases page, or build the package: `cd packaging/arch && makepkg -si`
+- **Run-time dependencies**: a Vulkan driver (`vulkan-radeon`, `vulkan-intel` or `nvidia-utils`), `vulkan-icd-loader`, `libxkbcommon-x11` (X11) or `wayland`
+- **From source**: `cd rust && cargo run --release --features desktop --bin raytrace-desktop`
+- CI builds the binary on Ubuntu, runs the unit tests and smoke-runs it on software Vulkan (lavapipe) under Xvfb; performance on real desktop GPUs has not been measured yet
+
 ## Benchmarks
 
 Measured on a **POCO F3 (Adreno 650)**, 120 Hz display, 1080x2400. Details and history are in [docs/bench.md](docs/bench.md).

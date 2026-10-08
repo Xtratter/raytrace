@@ -122,6 +122,18 @@ export CC_aarch64_linux_android="$CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"
 (cd rust && cargo test --lib)   # юнит-тесты на хосте, устройство не нужно
 ```
 
+## Linux (x86-64)
+
+Тот же рендерер работает на десктопном Linux (проверяемая цель: Manjaro / Arch, любая GPU с Vulkan 1.1) как `raytrace-desktop`: окно winit
+с панелью настроек на egui (те же вкладки, пресеты и языки, что в Android-приложении; язык берётся из `LANG`, переопределяется `RAYTRACE_LANG=en|ru`).
+Настройки сохраняются в `~/.config/raytrace/settings.ini`.
+
+- **Мышь**: перетаскивание — взгляд/орбита, колесо — зум. **Клавиши** (не зависят от раскладки): W A S D — левый стик, стрелки — правый, Tab — панель, F — во весь экран, H — HUD, R — сброс камеры, Esc — выход
+- **Установка**: скачайте `raytrace-<версия>-linux-x86_64.tar.gz` или `Raytrace-<версия>-x86_64.AppImage` со страницы Releases либо соберите пакет: `cd packaging/arch && makepkg -si`
+- **Зависимости времени выполнения**: драйвер Vulkan (`vulkan-radeon`, `vulkan-intel` или `nvidia-utils`), `vulkan-icd-loader`, `libxkbcommon-x11` (X11) или `wayland`
+- **Из исходников**: `cd rust && cargo run --release --features desktop --bin raytrace-desktop`
+- CI собирает бинарник на Ubuntu, гоняет юнит-тесты и запускает его на программном Vulkan (lavapipe) под Xvfb; скорость на реальных десктопных GPU пока не измерялась
+
 ## Замеры
 
 Измерено на **POCO F3 (Adreno 650)**, дисплей 120 Гц, 1080x2400. Подробности и история в [docs/bench.md](docs/bench.md).

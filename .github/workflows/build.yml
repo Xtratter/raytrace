@@ -55,14 +55,17 @@ jobs:
           cargo build --release --features desktop --bin raytrace-desktop
       - name: Smoke run (software Vulkan, virtual display)
         run: |
-          xvfb-run -a -s "-screen 0 1280x720x24" bash -c 'rust/target/release/raytrace-desktop > smoke.log 2>&1 & sleep 14; import -window root screenshot.png; kill %1' || true
-          cat smoke.log
+          xvfb-run -a -s "-screen 0 1280x720x24" bash -c 'rust/target/release/raytrace-desktop > smoke.log 2>&1 & sleep 14; xwininfo -root -tree > tree.txt; import -window root screenshot.png; xwd -root -silent | convert xwd:- screenshot2.png; kill %1' || true
+          cat smoke.log tree.txt
           grep -q "adapter:" smoke.log
           ! grep -qi "panicked\|panic:" smoke.log
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-screenshot
-          path: screenshot.png
+          path: |
+            screenshot.png
+            screenshot2.png
+            tree.txt
           if-no-files-found: warn
       - name: Package
         run: |

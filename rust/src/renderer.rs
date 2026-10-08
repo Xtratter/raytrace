@@ -52,7 +52,11 @@ impl Renderer {
         self.reset_history = true;
     }
 
-    pub fn frame(&mut self) {
+    pub fn gfx(&self) -> &Gfx { &self.gfx }
+
+    pub fn frame(&mut self) { self.frame_with(None); }
+
+    pub fn frame_with(&mut self, overlay: Option<Overlay>) {
         let now = Instant::now();
         let dt = (now - self.last).as_secs_f32().min(0.1);
         self.last = now;
@@ -96,7 +100,7 @@ impl Renderer {
             col_a: ca, pad2: 0.0, col_b: cb, pad3: 0.0,
             gi_block, gi_floor: 0.15, pad4: 0, pad5: 0,
         };
-        let ms = self.gfx.render(&p, s.get(id::DENOISE) as u32, (self.frame & 1) as usize);
+        let ms = self.gfx.render(&p, s.get(id::DENOISE) as u32, (self.frame & 1) as usize, overlay);
         if ms < 0.0 {
             std::thread::sleep(std::time::Duration::from_millis(8));
         }

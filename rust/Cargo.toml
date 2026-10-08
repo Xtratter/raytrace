@@ -14,6 +14,41 @@ pollster = "0.4"
 log = "0.4"
 raw-window-handle = "0.6"
 
+[features]
+# Linux/desktop build: winit window + egui settings panel (src/bin/raytrace-desktop.rs)
+desktop = ["dep:winit", "dep:egui", "dep:egui-winit", "dep:egui-wgpu", "dep:env_logger"]
+
+[[bin]]
+name = "raytrace-desktop"
+path = "src/bin/raytrace-desktop.rs"
+required-features = ["desktop"]
+
+[dependencies.winit]
+version = "0.30"
+optional = true
+
+[dependencies.egui]
+version = "0.31"
+optional = true
+default-features = false
+features = ["default_fonts"]
+
+[dependencies.egui-winit]
+version = "0.31"
+optional = true
+default-features = false
+features = ["x11", "wayland"]
+
+[dependencies.egui-wgpu]
+version = "0.31"
+optional = true
+
+[dependencies.env_logger]
+version = "0.11"
+optional = true
+default-features = false
+features = ["auto-color", "humantime"]
+
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 ndk = { version = "0.9", features = ["rwh_06"] }

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Raytrace
+Name[ru]=Raytrace
+Comment=Real-time SDF ray tracer (Vulkan)
+Comment[ru]=Трассировщик лучей по SDF в реальном времени (Vulkan)
+Exec=raytrace
+Icon=raytrace
+Categories=Graphics;Utility;
+Terminal=false

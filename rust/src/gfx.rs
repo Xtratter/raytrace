@@ -4,8 +4,13 @@ use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
 use crate::params::flags::GI_SPLIT;
+#[cfg(target_os = "android")]
 use ndk::native_window::NativeWindow;
+#[cfg(target_os = "android")]
 use raw_window_handle::{AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle};
+
+/// Extra drawing on top of the presented frame (the desktop settings panel): runs after the present pass, before submit.
+pub type Overlay<'a> = &'a mut dyn FnMut(&wgpu::Device, &wgpu::Queue, &mut wgpu::CommandEncoder, &wgpu::TextureView);
 
 /// Must match `struct Params` in shaders/common.wgsl (192 bytes; std140-compatible, no implicit padding).
 #[repr(C)]
@@ -69,7 +74,7 @@ pub struct Gfx {
     targets: Option<Targets>,
     prof: Option<Prof>,
     pass_ms: [f32; 8],
-    _window: NativeWindow, // dropped after `surface` (field order)
+    _window: Box<dyn std::any::Any>, // keeps the native window alive; dropped after `surface` (field order)
 }
 
 fn shader(dev: &wgpu::Device, name: &str, src: String) -> wgpu::ShaderModule {
@@ -109,6 +114,7 @@ fn layout(dev: &wgpu::Device, l: &wgpu::BindGroupLayout) -> wgpu::PipelineLayout
 }
 
 impl Gfx {
+    #[cfg(target_os = "android")]
     pub fn new(window: NativeWindow, w: u32, h: u32) -> Gfx {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor { backends: wgpu::Backends::VULKAN, ..Default::default() });
         let surface = unsafe {
@@ -117,6 +123,11 @@ impl Gfx {
                 raw_window_handle: RawWindowHandle::AndroidNdk(AndroidNdkWindowHandle::new(window.ptr().cast())),
             })
         }.expect("create_surface");
+        Gfx::from_surface(instance, surface, Box::new(window), w, h)
+    }
+
+    /// `keep` owns whatever the surface was created from (native window); it lives as long as the Gfx.
+    pub fn from_surface(instance: wgpu::Instance, surface: wgpu::Surface<'static>, keep: Box<dyn std::any::Any>, w: u32, h: u32) -> Gfx {
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: Some(&surface),
@@ -244,12 +255,16 @@ impl Gfx {
         Gfx {
             surface, device, queue, config, modes: caps.present_modes, params_buf, step_bufs, gi_step_bufs, sampler,
             gi_trace_pl, gi_trace_bgl, gi_temporal_pl, gi_temporal_bgl, gi_atrous_pl, gi_atrous_bgl, composite_pl, composite_bgl,
-            trace_pl, trace_bgl, temporal_pl, temporal_bgl, atrous_pl, atrous_bgl, present_pl, present_bgl, targets: None, prof, pass_ms: [0.0; 8], _window: window,
+            trace_pl, trace_bgl, temporal_pl, temporal_bgl, atrous_pl, atrous_bgl, present_pl, present_bgl, targets: None, prof, pass_ms: [0.0; 8], _window: keep,
         }
     }
 
     /// Per-pass GPU ms of the last frame (slots: trace, gi_trace, gi_temporal, gi_atrous, temporal, atrous, composite, present); 0 = unsupported/unmeasured.
     pub fn pass_ms(&self) -> [f32; 8] { self.pass_ms }
+
+    pub fn device(&self) -> &wgpu::Device { &self.device }
+    pub fn queue(&self) -> &wgpu::Queue { &self.queue }
+    pub fn format(&self) -> wgpu::TextureFormat { self.config.format }
 
     pub fn is_srgb(&self) -> bool { self.config.format.is_srgb() }
 
@@ -309,7 +324,7 @@ impl Gfx {
     }
 
     /// Encodes and submits one frame; returns GPU time in ms, or negative if the frame was skipped.
-    pub fn render(&mut self, p: &GpuParams, denoise_iters: u32, parity: usize) -> f32 {
+    pub fn render(&mut self, p: &GpuParams, denoise_iters: u32, parity: usize, overlay: Option<Overlay>) -> f32 {
         self.queue.write_buffer(&self.params_buf, 0, bytemuck::bytes_of(p));
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
@@ -478,6 +493,7 @@ impl Gfx {
             rp.set_bind_group(0, &present_bg, &[]);
             rp.draw(0..3, 0..1);
         }
+        if let Some(o) = overlay { o(&self.device, &self.queue, &mut enc, &view); }
         // Resolve only slots whose passes were encoded this frame (never-written queries must not be resolved).
         let ran = [true, gi_bgs.is_some(), gi_bgs.is_some(), gi_bgs.is_some(), true, n_at > 0, comp_bg.is_some(), true];
         if let Some(p) = prof {

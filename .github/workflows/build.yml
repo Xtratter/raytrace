@@ -39,3 +39,51 @@ jobs:
           name: raytrace-${{ github.sha }}
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
+
+  desktop:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev
+      - name: Tests and release build (x86_64 Linux)
+        run: |
+          cd rust
+          cargo test --lib --features desktop
+          cargo build --release --features desktop --bin raytrace-desktop
+      - name: Package
+        run: |
+          v=$(grep -m1 '^version' rust/Cargo.toml | cut -d'"' -f2)
+          d=raytrace-$v-linux-x86_64
+          mkdir "$d"
+          cp rust/target/release/raytrace-desktop "$d/raytrace"
+          cp LICENSE README.md README.ru.md "$d/"
+          cp -r packaging/linux/* "$d/"
+          tar czf "$d.tar.gz" "$d"
+          echo "TARBALL=$d.tar.gz" >> "$GITHUB_ENV"
+      - name: AppImage
+        run: |
+          v=$(grep -m1 '^version' rust/Cargo.toml | cut -d'"' -f2)
+          mkdir -p AppDir/usr/bin
+          cp rust/target/release/raytrace-desktop AppDir/usr/bin/raytrace
+          cp packaging/linux/raytrace.desktop packaging/linux/raytrace.svg AppDir/
+          printf '#!/bin/sh\nexec "$(dirname "$(readlink -f "$0")")/usr/bin/raytrace" "$@"\n' > AppDir/AppRun
+          chmod +x AppDir/AppRun
+          curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir "Raytrace-$v-x86_64.AppImage"
+          echo "APPIMAGE=Raytrace-$v-x86_64.AppImage" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: raytrace-linux-${{ github.sha }}
+          path: |
+            ${{ env.TARBALL }}
+            ${{ env.APPIMAGE }}
+          if-no-files-found: error
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" "$TARBALL" "$APPIMAGE" --clobber

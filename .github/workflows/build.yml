@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev mesa-vulkan-drivers xvfb libxkbcommon-x11-0
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev mesa-vulkan-drivers xvfb libxkbcommon-x11-0 imagemagick x11-apps
       - name: Tests and release build (x86_64 Linux)
         run: |
           cd rust
@@ -55,10 +55,15 @@ jobs:
           cargo build --release --features desktop --bin raytrace-desktop
       - name: Smoke run (software Vulkan, virtual display)
         run: |
-          timeout 25 xvfb-run -a rust/target/release/raytrace-desktop > smoke.log 2>&1 || true
+          xvfb-run -a -s "-screen 0 1280x720x24" bash -c 'rust/target/release/raytrace-desktop > smoke.log 2>&1 & sleep 14; import -window root screenshot.png; kill %1' || true
           cat smoke.log
           grep -q "adapter:" smoke.log
           ! grep -qi "panicked\|panic:" smoke.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-screenshot
+          path: screenshot.png
+          if-no-files-found: warn
       - name: Package
         run: |
           v=$(grep -m1 '^version' rust/Cargo.toml | cut -d'"' -f2)

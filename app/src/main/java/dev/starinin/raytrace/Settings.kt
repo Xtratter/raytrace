@@ -36,7 +36,7 @@ class Settings(private val kv: KeyValue, private val push: (Int, Float) -> Unit)
             d(18, "anim", 1f, 0f, 1f), d(19, "orbit", 0f, 0f, 2f), d(20, "fov", 60f, 40f, 90f),
             d(21, "exposure", 0f, -4f, 4f), d(22, "tonemap", 0f, 0f, 2f), d(23, "sky", 0f, 0f, 2f),
             d(24, "hud", 1f, 0f, 2f), d(25, "frame_limit", 1f, 0f, 1f),
-            d(26, "cam_mode", 0f, 0f, 1f), d(27, "sticks", 1f, 0f, 1f),
+            d(26, "cam_mode", 0f, 0f, 2f), d(27, "sticks", 1f, 0f, 1f),
             d(28, "move_speed", 3f, 1f, 5f), d(29, "look_speed", 3f, 1f, 5f),
             d(30, "gi_res", 1f, 0f, 2f), d(31, "ps1", 0f, 0f, 1f),
             d(100, "theme", 0f, 0f, 4f, false), d(102, "preset", 1f, 0f, 3f, false),

@@ -42,6 +42,7 @@ The interface is bilingual (English and Russian, follows the system language); t
 | Pinch | Zoom |
 | Left stick | Move (fly mode) / zoom (orbit mode); up = forward / zoom in |
 | Right stick | Look (fly mode) / orbit (orbit mode); up = look up |
+| Helicopter mode | Left stick: x turns, up = forward; right stick: up/down = height, x = strafe; the view stays level |
 | Double tap | Reset the camera |
 | Gear button | Open the settings sheet |
 | Tap the status island | Toggle HUD detail |

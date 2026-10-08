@@ -41,7 +41,7 @@ pub const DEFS: [Def; N] = [
     d(23, 0.0, 0.0, 2.0),  // sky
     d(24, 1.0, 0.0, 2.0),  // hud
     d(25, 1.0, 0.0, 1.0),  // frame_limit
-    d(26, 0.0, 0.0, 1.0),  // cam_mode (0 orbit, 1 fly)
+    d(26, 0.0, 0.0, 2.0),  // cam_mode (0 orbit, 1 fly, 2 helicopter)
     d(27, 1.0, 0.0, 1.0),  // sticks (on-screen sticks visible; Kotlin only)
     d(28, 3.0, 1.0, 5.0),  // move_speed
     d(29, 3.0, 1.0, 5.0),  // look_speed

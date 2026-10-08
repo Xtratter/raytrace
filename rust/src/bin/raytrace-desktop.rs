@@ -139,7 +139,7 @@ impl Panel<'_> {
 
     fn scene(&mut self, ui: &mut egui::Ui) {
         let speeds = ["0.4×", "0.7×", "1×", "1.5×", "2.2×"];
-        self.chips(ui, self.t("Camera mode", "Режим камеры"), id::CAM_MODE, &[(self.t("Orbit", "Орбита"), 0.0), (self.t("Fly", "Полёт"), 1.0)]);
+        self.chips(ui, self.t("Camera mode", "Режим камеры"), id::CAM_MODE, &[(self.t("Orbit", "Орбита"), 0.0), (self.t("Fly", "Полёт"), 1.0), (self.t("Helicopter", "Вертолёт"), 2.0)]);
         self.stepper(ui, self.t("Move speed", "Скорость движения"), id::MOVE_SPEED, 1.0, |v| speeds[v as usize - 1].to_string());
         self.stepper(ui, self.t("Look speed", "Скорость взгляда"), id::LOOK_SPEED, 1.0, |v| speeds[v as usize - 1].to_string());
         self.toggle(ui, self.t("Animation", "Анимация"), id::ANIM);

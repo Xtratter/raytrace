@@ -4,16 +4,19 @@ const TARGET: [f32; 3] = [0.0, 1.2, -1.8];
 pub enum Mode {
     Orbit,
     Fly,
+    /// Helicopter: left stick x turns, y moves forward/back; right stick y changes height, x strafes. Pitch is fixed.
+    Heli,
 }
 
 impl Mode {
     pub fn from_param(v: f32) -> Mode {
-        if v > 0.5 { Mode::Fly } else { Mode::Orbit }
+        if v > 1.5 { Mode::Heli } else if v > 0.5 { Mode::Fly } else { Mode::Orbit }
     }
 }
 
 const LOOK_RATE: f32 = 1.6; // rad/s at full deflection
 const MOVE_RATE: f32 = 2.5; // units/s at full deflection
+const HELI_PITCH: f32 = -0.12; // slightly down, rad
 const FLY_MIN: [f32; 3] = [-5.5, 0.3, -6.5];
 const FLY_MAX: [f32; 3] = [5.5, 8.0, 12.0];
 
@@ -63,7 +66,7 @@ impl Camera {
                 self.fly_yaw = fy;
                 self.fly_pitch = fpi;
             }
-            Mode::Fly => {
+            Mode::Fly | Mode::Heli => {
                 let d = Camera::new();
                 self.fly_pos = d.fly_pos;
                 self.fly_yaw = d.fly_yaw;
@@ -76,8 +79,11 @@ impl Camera {
         if m == self.mode {
             return;
         }
-        if m == Mode::Fly {
+        if self.mode == Mode::Orbit {
             self.enter_fly_from_orbit();
+        }
+        if m == Mode::Heli {
+            self.fly_pitch = HELI_PITCH;
         }
         self.mode = m;
     }
@@ -122,6 +128,7 @@ impl Camera {
                 self.yaw -= dx * 0.006;
                 self.pitch = (self.pitch + dy * 0.006).clamp(0.02, 1.45);
             }
+            Mode::Heli => self.fly_yaw -= dx * 0.006,
             Mode::Fly => {
                 self.fly_yaw -= dx * 0.006;
                 self.fly_pitch = (self.fly_pitch - dy * 0.006).clamp(-1.45, 1.45);
@@ -136,7 +143,7 @@ impl Camera {
         }
         match self.mode {
             Mode::Orbit => self.dist = (self.dist * f).clamp(3.0, 14.0),
-            Mode::Fly => {
+            Mode::Fly | Mode::Heli => {
                 let fw = self.fly_forward();
                 let k = (1.0 - f).clamp(-10.0, 1.0) * 2.0;
                 for i in 0..3 {
@@ -172,6 +179,16 @@ impl Camera {
                 self.auto_phase = (self.auto_phase + w * dt) % std::f32::consts::TAU;
                 self.auto_off = 0.9 * self.auto_phase.sin();
             }
+            Mode::Heli => {
+                self.fly_yaw -= lx * lr;
+                self.fly_pitch = HELI_PITCH;
+                let (sy, cy) = self.fly_yaw.sin_cos();
+                let v = MOVE_RATE * move_f * dt;
+                self.fly_pos[0] += (sy * ly - cy * rx) * v;
+                self.fly_pos[2] += (cy * ly + sy * rx) * v;
+                self.fly_pos[1] += ry * v;
+                self.clamp_fly();
+            }
             Mode::Fly => {
                 self.fly_yaw -= rx * lr;
                 self.fly_pitch = (self.fly_pitch + ry * lr).clamp(-1.45, 1.45);
@@ -189,7 +206,7 @@ impl Camera {
     pub fn pose(&self) -> ([f32; 3], [f32; 3]) {
         match self.mode {
             Mode::Orbit => self.orbit_pose(),
-            Mode::Fly => {
+            Mode::Fly | Mode::Heli => {
                 let f = self.fly_forward();
                 let p = self.fly_pos;
                 (p, [p[0] + f[0] * 3.0, p[1] + f[1] * 3.0, p[2] + f[2] * 3.0])
@@ -548,5 +565,24 @@ mod sign_tests {
         let mut c = Camera::new();
         c.update(0.1, 0, Mode::Orbit, [1.0, 0.0, 0.0, 0.0], 1.0, 1.0); // lx>0 raises at half rate
         assert!((c.pitch - 0.43).abs() < 1e-5);
+    }
+
+    #[test]
+    fn heli_turn_height_forward() {
+        const Z: [f32; 4] = [0.0; 4];
+        let mut c = Camera::new();
+        c.update(0.0, 0, Mode::Heli, Z, 1.0, 1.0);
+        c.fly_pos = [0.0, 2.0, 0.0];
+        let (y0, h0) = (c.fly_yaw, c.fly_pos[1]);
+        c.update(0.2, 0, Mode::Heli, [1.0, 0.0, 0.0, 0.0], 1.0, 1.0); // left stick right: turns right, no movement
+        assert!(c.fly_yaw < y0 && c.fly_pos[0] == 0.0 && c.fly_pos[2] == 0.0);
+        c.update(0.2, 0, Mode::Heli, [0.0, 0.0, 0.0, 1.0], 1.0, 1.0); // right stick up: climbs, heading unchanged
+        assert!(c.fly_pos[1] > h0);
+        let yaw = c.fly_yaw;
+        let p = c.fly_pos;
+        c.update(0.2, 0, Mode::Heli, [0.0, 1.0, 0.0, 0.0], 1.0, 1.0); // left stick up: forward at constant height
+        assert_eq!(c.fly_yaw, yaw);
+        assert!((c.fly_pos[1] - p[1]).abs() < 1e-6 && (c.fly_pos[0] != p[0] || c.fly_pos[2] != p[2]));
+        assert_eq!(Mode::from_param(2.0), Mode::Heli);
     }
 }

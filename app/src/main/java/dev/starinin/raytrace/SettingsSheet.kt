@@ -209,7 +209,7 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
     }
 
     private fun scene() {
-        chips(t("Camera mode", "Режим камеры"), Ids.CAM_MODE, listOf(t("Orbit", "Орбита") to 0f, t("Fly", "Полёт") to 1f))
+        chips(t("Camera mode", "Режим камеры"), Ids.CAM_MODE, listOf(t("Orbit", "Орбита") to 0f, t("Fly", "Полёт") to 1f, t("Helicopter", "Вертолёт") to 2f))
         toggle(t("On-screen sticks", "Экранные стики"), Ids.STICKS)
         val speeds = listOf("0.4×", "0.7×", "1×", "1.5×", "2.2×")
         stepper(t("Move speed", "Скорость движения"), Ids.MOVE_SPEED, 1f) { speeds[it.toInt().coerceIn(1, 5) - 1] }

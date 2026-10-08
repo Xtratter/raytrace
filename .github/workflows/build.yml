@@ -53,7 +53,7 @@ jobs:
           cd rust
           cargo test --lib --features desktop
           cargo build --release --features desktop --bin raytrace-desktop
-      - name: Smoke run (software Vulkan, virtual display): one screenshot per built-in scene
+      - name: Smoke run on software Vulkan, one screenshot per built-in scene
         run: |
           for sc in 0 1 2; do
             RAYTRACE_SCENE=$sc RAYTRACE_PANEL=0 xvfb-run -a -s "-screen 0 1280x720x24" bash -c "rust/target/release/raytrace-desktop > smoke$sc.log 2>&1 & sleep 22; xwd -root -silent | convert xwd:- screenshot$sc.png; kill %1" || true

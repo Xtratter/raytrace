@@ -19,7 +19,7 @@ pub fn detect(get: impl Fn(usize) -> f32) -> usize {
 pub const KEYS: [&str; crate::params::N] = [
     "mode", "scale_idx", "adaptive", "target_fps", "bounces", "spp", "temporal", "strength", "denoise", "sharpen", "checker",
     "shadows", "gi", "caustics", "reflections", "light", "col_a", "col_b", "anim", "orbit", "fov", "exposure", "tonemap",
-    "sky", "hud", "frame_limit", "cam_mode", "sticks", "move_speed", "look_speed", "gi_res",
+    "sky", "hud", "frame_limit", "cam_mode", "sticks", "move_speed", "look_speed", "gi_res", "ps1",
 ];
 
 #[cfg(test)]

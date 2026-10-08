@@ -94,6 +94,24 @@ pub fn render_size(win_w: u32, win_h: u32, scale: f32) -> (u32, u32) {
     (f(win_w), f(win_h))
 }
 
+/// Retro mode render size: the shorter window side is 240 px (multiples of 8 as elsewhere).
+pub fn ps1_size(win_w: u32, win_h: u32) -> (u32, u32) {
+    let (w, h) = (win_w.max(1) as f32, win_h.max(1) as f32);
+    let k = 240.0 / w.min(h);
+    let f = |v: f32| (((v * k).round() as u32) & !7).max(8);
+    (f(w), f(h))
+}
+
+/// Retro mode: a coarse grid for camera positions (the image steps instead of gliding).
+pub fn ps1_snap(v: [f32; 3]) -> [f32; 3] {
+    v.map(|x| (x * 24.0).round() / 24.0)
+}
+
+/// Retro mode: animation advances in 12 fps steps.
+pub fn ps1_time(t: f32) -> f32 {
+    (t * 12.0).floor() / 12.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,6 +159,15 @@ mod tests {
         let mut b = AdaptiveRes::new(0.25, 1.0, 0.26);
         for i in 0..50 { b.update(500.0, 60.0, i as f32); }
         assert_eq!(b.scale(), 0.25);
+    }
+
+    #[test]
+    fn ps1_helpers() {
+        assert_eq!(ps1_size(1080, 2400), (240, 528));
+        assert_eq!(ps1_size(1280, 720), (424, 240));
+        assert_eq!(ps1_size(1, 1), (240, 240));
+        assert_eq!(ps1_snap([0.01, 1.0, -2.51]), [0.0, 1.0, -2.5]);
+        assert_eq!(ps1_time(0.2), 2.0 / 12.0);
     }
 
     #[test]

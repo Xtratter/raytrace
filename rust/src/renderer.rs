@@ -68,7 +68,9 @@ impl Renderer {
         } else { max_scale };
         // Safety cap (heavy settings): never exceeds what the last frames could afford.
         let scale = scale * self.governor.limit_scale;
-        let (rw, rh) = render_size(self.win.0, self.win.1, scale);
+        let ps1 = s.on(id::PS1);
+        let (rw, rh) = if ps1 { ps1_size(self.win.0, self.win.1) } else { render_size(self.win.0, self.win.1, scale) };
+        let scale = rw as f32 / self.win.0.max(1) as f32;
         let gi_block = if s.gi_split() { s.gi_block() } else { 0 };
         if self.gfx.ensure_targets(rw, rh, gi_block) { self.reset_history = true; self.warmup = 2; }
         let gov = governor_active(self.warmup);
@@ -76,21 +78,23 @@ impl Renderer {
         self.cam.update(dt, s.get(id::ORBIT) as u32, Mode::from_param(s.get(id::CAM_MODE)), self.sticks,
             speed_factor(s.get(id::MOVE_SPEED)), speed_factor(s.get(id::LOOK_SPEED)));
         let pose = self.cam.pose();
+        let pose = if ps1 { (ps1_snap(pose.0), ps1_snap(pose.1)) } else { pose };
         let fov = s.get(id::FOV).to_radians();
         let moved = pose != self.prev_pose;
         let pt = s.get(id::MODE) as u32 == 1;
         if !pt && s.on(id::ANIM) { self.time += dt; }
         let still = pt && !moved && !self.reset_history;
         let temporal = s.on(id::TEMPORAL);
-        let jit = if temporal { halton::jitter(self.frame) } else { [0.0, 0.0] };
+        let jit = if temporal && !ps1 { halton::jitter(self.frame) } else { [0.0, 0.0] };
         let mut flags = s.flags();
+        if ps1 { flags = (flags & !flags::CHECKER) | flags::PS1; }
         if self.gfx.is_srgb() { flags |= flags::SRGB; }
         if still { flags |= flags::STILL; }
         if moved { flags |= flags::MOVED; }
         let (ca, cb) = s.light_emission();
         let p = GpuParams {
             res: [rw as f32, rh as f32], out_size: [self.win.0 as f32, self.win.1 as f32],
-            cam_pos: pose.0, time: self.time, cam_target: pose.1, fov,
+            cam_pos: pose.0, time: if ps1 { ps1_time(self.time) } else { self.time }, cam_target: pose.1, fov,
             prev_pos: self.prev_pose.0, frame: self.frame, prev_target: self.prev_pose.1, seed: self.seed,
             jitter: jit, prev_jitter: self.prev_jitter,
             mode: pt as u32, flags, bounces: s.get(id::BOUNCES) as u32, spp: if gov && self.last_ms > Governor::SLOW_MS { 1 } else { s.get(id::SPP) as u32 },

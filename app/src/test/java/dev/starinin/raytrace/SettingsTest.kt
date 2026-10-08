@@ -53,7 +53,7 @@ class SettingsTest {
     @Test fun pushAllSendsEveryNativeParam() {
         val pushed = mutableSetOf<Int>()
         Settings(FakeKv()) { i, _ -> pushed += i }.pushAll()
-        assertEquals(31, pushed.size)
+        assertEquals(32, pushed.size)
         assertTrue(100 !in pushed)
     }
 

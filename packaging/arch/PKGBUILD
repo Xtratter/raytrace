@@ -1,6 +1,6 @@
 # Maintainer: Xtratter
 pkgname=raytrace
-pkgver=1.4.0
+pkgver=1.5.0
 pkgrel=1
 pkgdesc='Real-time SDF ray tracer (Rust, wgpu/Vulkan) with an egui settings panel'
 arch=('x86_64')

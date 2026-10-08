@@ -23,6 +23,7 @@ const F_TEMPORAL: u32 = 64u;
 const F_STILL: u32 = 128u;
 const F_MOVED: u32 = 256u;
 const F_GI_SPLIT: u32 = 512u;
+const F_PS1: u32 = 1024u;
 
 // Reads the global uniform `P` (passing the uniform struct by value mis-evaluated flags on the target GPU driver).
 fn has(f: u32) -> bool { return (P.flags & f) != 0u; }

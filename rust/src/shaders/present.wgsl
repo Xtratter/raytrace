@@ -53,9 +53,26 @@ fn hash12(p: vec2<f32>) -> f32 {
   return fract((q.x + q.y) * q.z);
 }
 
+// 4x4 ordered-dither threshold in [0,1) from the pixel parity bits (no array indexing)
+fn bayer4(p: vec2<u32>) -> f32 {
+  let x = p.x & 3u;
+  let y = p.y & 3u;
+  let a = x ^ y;
+  let v = ((a & 1u) << 3u) | ((y & 1u) << 2u) | (((a >> 1u) & 1u) << 1u) | ((y >> 1u) & 1u);
+  return (f32(v) + 0.5) * (1.0 / 16.0);
+}
+
 @fragment
 fn fs(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
   let uv = pos.xy / P.out_size;
+  if ((P.flags & F_PS1) != 0u) {
+    // hard pixels (no filtering), 5 bits per channel with ordered dither on the source pixel grid
+    let ip = vec2<u32>(min(floor(uv * P.res), P.res - vec2<f32>(1.0)));
+    var c = tone(textureLoad(src, vec2<i32>(ip), 0).rgb);
+    if ((P.flags & F_SRGB) == 0u) { c = pow(c, vec3<f32>(1.0 / 2.2)); }
+    c = floor(clamp(c, vec3<f32>(0.0), vec3<f32>(1.0)) * 31.0 + vec3<f32>(bayer4(ip))) * (1.0 / 31.0);
+    return vec4<f32>(c, 1.0);
+  }
   var o = tone(sample_cr(uv));
   if (P.sharpen > 0.0) {
     // unsharp mask in display space (after tonemap)

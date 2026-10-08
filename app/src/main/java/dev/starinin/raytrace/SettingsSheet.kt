@@ -173,6 +173,12 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
         chips(t("Target FPS", "Целевой FPS"), Ids.TARGET_FPS, listOf("30" to 30f, "45" to 45f, "60" to 60f, "90" to 90f))
         stepper(t("Bounces", "Отражения луча"), Ids.BOUNCES, 1f) { it.toInt().toString() }
         stepper(t("Samples per pixel", "Сэмплов на пиксель"), Ids.SPP, 1f) { it.toInt().toString() }
+        toggle(t("PlayStation 1 look", "Стиль PlayStation 1"), Ids.PS1)
+        content.addView(TextView(context).apply {
+            text = t("240 px low-res, hard pixels, 15-bit colour with dither, snapped camera, 12 fps animation; replaces render scale (smoothing still applies)",
+                "Разрешение 240 px, жёсткие пиксели, 15-битный цвет с дизерингом, камера по сетке, анимация 12 к/с; заменяет масштаб рендера (сглаживание работает)")
+            textSize = 12f; setTextColor(M3.TEXT2); setPadding(px(20f), 0, px(16f), px(4f))
+        })
     }
 
     private fun smoothing() {

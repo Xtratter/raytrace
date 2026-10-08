@@ -108,6 +108,9 @@ impl Panel<'_> {
         self.chips(ui, self.t("Target FPS", "Целевой FPS"), id::TARGET_FPS, &[("30", 30.0), ("45", 45.0), ("60", 60.0), ("90", 90.0)]);
         self.stepper(ui, self.t("Bounces", "Отражения луча"), id::BOUNCES, 1.0, |v| format!("{}", v as i32));
         self.stepper(ui, self.t("Samples per pixel", "Сэмплов на пиксель"), id::SPP, 1.0, |v| format!("{}", v as i32));
+        self.toggle(ui, self.t("PlayStation 1 look", "Стиль PlayStation 1"), id::PS1);
+        ui.label(egui::RichText::new(self.t("240 px low-res, hard pixels, 15-bit dithered colour, snapped camera, 12 fps animation; replaces render scale",
+            "Разрешение 240 px, жёсткие пиксели, 15-битный цвет с дизерингом, камера по сетке, анимация 12 к/с; заменяет масштаб рендера")).small().weak());
     }
 
     fn smoothing(&mut self, ui: &mut egui::Ui) {

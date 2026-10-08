@@ -1,6 +1,6 @@
 //! Parameter table shared with Kotlin (see ../params.json). Ids are stable; do not renumber.
 
-pub const N: usize = 31;
+pub const N: usize = 32;
 
 #[derive(Clone, Copy)]
 pub struct Def {
@@ -46,6 +46,7 @@ pub const DEFS: [Def; N] = [
     d(28, 3.0, 1.0, 5.0),  // move_speed
     d(29, 3.0, 1.0, 5.0),  // look_speed
     d(30, 1.0, 0.0, 2.0),  // gi_res
+    d(31, 0.0, 0.0, 1.0),  // ps1 (retro look)
 ];
 
 pub mod id {
@@ -80,6 +81,7 @@ pub mod id {
     pub const MOVE_SPEED: usize = 28;
     pub const LOOK_SPEED: usize = 29;
     pub const GI_RES: usize = 30;
+    pub const PS1: usize = 31;
 }
 
 /// Bits of `Params.flags` (mirrored in common.wgsl).
@@ -94,6 +96,7 @@ pub mod flags {
     pub const STILL: u32 = 128; // camera + scene unchanged this frame
     pub const MOVED: u32 = 256; // camera moved this frame
     pub const GI_SPLIT: u32 = 512; // deferred half/quarter-res GI active
+    pub const PS1: u32 = 1024; // retro look: nearest upscale, 15-bit dithered colour
 }
 
 pub const SCALES: [f32; 5] = [0.25, 0.33, 0.5, 0.75, 1.0];
@@ -123,7 +126,7 @@ pub fn affects_history(id: usize) -> bool {
     matches!(
         id,
         id::MODE | id::BOUNCES | id::SPP | id::SHADOWS | id::GI | id::CAUSTICS | id::REFLECTIONS
-            | id::GI_RES | id::LIGHT | id::COL_A | id::COL_B | id::FOV | id::SKY
+            | id::GI_RES | id::PS1 | id::LIGHT | id::COL_A | id::COL_B | id::FOV | id::SKY
     )
 }
 
@@ -277,7 +280,7 @@ mod tests {
 
     #[test]
     fn new_params_defs_and_history() {
-        assert_eq!(N, 31);
+        assert_eq!(N, 32);
         assert_eq!(id::CAM_MODE, 26);
         assert_eq!(id::STICKS, 27);
         assert_eq!(id::MOVE_SPEED, 28);

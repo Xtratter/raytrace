@@ -79,6 +79,13 @@ mod tests {
     }
 
     #[test]
+    fn scene_uniform_array_sizes_match_rust() {
+        let w = include_str!("shaders/scene.wgsl");
+        assert!(w.contains(&format!("prims: array<Prim, {}>", crate::scene::MAX_PRIMS)));
+        assert!(w.contains(&format!("mats: array<MatU, {}>", crate::scene::MAX_MATS)));
+    }
+
+    #[test]
     fn shaders_validate() {
         validate("trace", trace());
         validate("temporal", temporal());

@@ -117,7 +117,7 @@ struct MatU { a: vec4<f32>, b: vec4<f32>, c: vec4<f32>, d: vec4<f32> };
 struct SceneU {
   sun_dir: vec4<f32>, sun_col: vec4<f32>,
   lamp0: vec4<f32>, lamp1: vec4<f32>, lamp_c0: vec4<f32>, lamp_c1: vec4<f32>, caustic: vec4<f32>,
-  prims: array<Prim, 20>, mats: array<MatU, 16>,
+  prims: array<Prim, 19>, mats: array<MatU, 16>,
 };
 @group(0) @binding(4) var<uniform> S: SceneU;
 

@@ -1,0 +1,35 @@
+{
+  "name": "Classic",
+  "camera": {"target": [0, 1.2, -1.8], "yaw": 0.3, "pitch": 0.35, "dist": 10.5, "dist_range": [3, 14],
+             "orbit_min": [-5.5, 0.3, -6.5], "orbit_max": [5.5, 12, 20], "fly_min": [-5.5, 0.3, -6.5], "fly_max": [5.5, 8, 12]},
+  "lamps": [
+    {"pos": [-2.5, 5, 1.5], "radius": 0.8, "user": "a"},
+    {"pos": [4, 3, -3.5], "radius": 0.45, "user": "b"}
+  ],
+  "materials": [
+    {"name": "floor", "color": [0.78, 0.78, 0.78], "checker": [0.12, 0.12, 0.12], "checker_scale": 1},
+    {"name": "mirror", "kind": "metal", "color": [0.95, 0.95, 0.97]},
+    {"name": "glass", "kind": "glass", "color": [1, 1, 1]},
+    {"name": "blob", "color": [0.85, 0.12, 0.08]},
+    {"name": "gold", "kind": "metal", "color": [1.0, 0.78, 0.34], "rough": 0.22},
+    {"name": "sponge", "color": [0.2, 0.42, 0.9]},
+    {"name": "back", "color": [0.82, 0.8, 0.72]},
+    {"name": "left", "color": [0.12, 0.62, 0.2]},
+    {"name": "right", "color": [0.85, 0.28, 0.1]},
+    {"name": "lamp_a", "kind": "emissive", "user": "a"},
+    {"name": "lamp_b", "kind": "emissive", "user": "b"}
+  ],
+  "objects": [
+    {"type": "box", "pos": [0, -5, 0], "size": [60, 5, 60], "material": "floor"},
+    {"type": "box", "pos": [0, 20, -12], "size": [60, 25, 5], "material": "back"},
+    {"type": "box", "pos": [-11, 20, 0], "size": [5, 25, 60], "material": "left"},
+    {"type": "box", "pos": [11, 20, 0], "size": [5, 25, 60], "material": "right"},
+    {"type": "sphere", "pos": [-1.8, 1.0, 0.2], "radius": 1.0, "material": "mirror"},
+    {"type": "sphere", "pos": [1.2, 0.8, 1.0], "radius": 0.8, "material": "glass"},
+    {"type": "blobs", "pos": [-0.2, 0.5, -1.8], "pos2": [0.5, 0.42, -1.6], "radii": [0.5, 0.42], "smooth": 0.35, "material": "blob"},
+    {"type": "torus", "pos": [3.1, 0.3, -0.6], "radii": [0.85, 0.3], "material": "gold"},
+    {"type": "menger", "pos": [-0.4, 1.1, -4.2], "size": 1.1, "spin": 0.25, "material": "sponge"},
+    {"type": "sphere", "pos": [-2.5, 5, 1.5], "radius": 0.8, "material": "lamp_a"},
+    {"type": "sphere", "pos": [4, 3, -3.5], "radius": 0.45, "material": "lamp_b"}
+  ]
+}

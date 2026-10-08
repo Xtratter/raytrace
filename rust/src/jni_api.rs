@@ -10,7 +10,7 @@ use ndk::native_window::NativeWindow;
 
 use crate::{gfx::Gfx, renderer::Renderer};
 
-pub enum Cmd { Param(i32, f32), Orbit(f32, f32), Sticks(f32, f32, f32, f32), Zoom(f32), ResetCam, Resize(u32, u32), Stop }
+pub enum Cmd { Param(i32, f32), Orbit(f32, f32), Sticks(f32, f32, f32, f32), Zoom(f32), ResetCam, Resize(u32, u32), Scene(Box<crate::scene::SceneData>), Stop }
 
 struct Engine { tx: Sender<Cmd>, handle: Option<JoinHandle<()>>, stats: Arc<Mutex<[f32; 16]>> }
 
@@ -47,6 +47,7 @@ pub extern "system" fn Java_dev_starinin_raytrace_Native_start(env: JNIEnv, _c: 
                     Ok(Cmd::Sticks(a, b, c, d)) => r.sticks = [a, b, c, d],
                     Ok(Cmd::Zoom(f)) => r.cam.zoom(f),
                     Ok(Cmd::ResetCam) => r.cam.reset(),
+                    Ok(Cmd::Scene(d)) => r.set_custom_scene(*d),
                     Ok(Cmd::Resize(w, h)) => r.resize(w, h),
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => break 'run,
@@ -89,4 +90,15 @@ pub extern "system" fn Java_dev_starinin_raytrace_Native_stats(env: JNIEnv, _c: 
     let arr = env.new_float_array(16).unwrap();
     env.set_float_array_region(&arr, 0, &s).unwrap();
     arr.into_raw()
+}
+
+/// Parses a scene file's JSON and, if valid, switches the renderer to it. Returns "" on success, else a readable error.
+#[no_mangle]
+pub extern "system" fn Java_dev_starinin_raytrace_Native_loadScene(mut env: JNIEnv, _c: JClass, json: jni::objects::JString) -> jni::sys::jstring {
+    let text: String = match env.get_string(&json) { Ok(s) => s.into(), Err(_) => String::from("{") };
+    let msg = match crate::scene::parse(&text) {
+        Ok(d) => { send(Cmd::Scene(Box::new(d))); String::new() }
+        Err(e) => e,
+    };
+    env.new_string(msg).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
 }

@@ -6,6 +6,7 @@ pub mod params;
 pub mod presets;
 pub mod profile;
 pub mod reproj;
+pub mod scene;
 pub mod shaders;
 #[cfg(any(target_os = "android", feature = "desktop"))]
 pub mod gfx;

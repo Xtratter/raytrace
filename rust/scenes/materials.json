@@ -1,0 +1,39 @@
+{
+  "name": "Materials",
+  "camera": {"target": [0, 0.9, -1.2], "yaw": 0.15, "pitch": 0.3, "dist": 9, "dist_range": [3, 13],
+             "orbit_min": [-5.5, 0.3, -6.5], "orbit_max": [5.5, 10, 14], "fly_min": [-5.5, 0.3, -6.5], "fly_max": [5.5, 8, 12]},
+  "lamps": [
+    {"pos": [-3, 5, 2], "radius": 0.7, "user": "a"},
+    {"pos": [4, 3.5, -2.5], "radius": 0.5, "user": "b"}
+  ],
+  "materials": [
+    {"name": "floor", "color": [0.78, 0.78, 0.78], "checker": [0.12, 0.12, 0.12], "checker_scale": 1},
+    {"name": "wall", "color": [0.55, 0.57, 0.62]},
+    {"name": "copper", "kind": "metal", "color": [0.95, 0.64, 0.54], "rough": 0.35},
+    {"name": "mirror", "kind": "metal", "color": [0.95, 0.95, 0.97]},
+    {"name": "blue_gloss", "kind": "glossy", "color": [0.1, 0.25, 0.85]},
+    {"name": "green_matte", "color": [0.2, 0.6, 0.25]},
+    {"name": "gold", "kind": "metal", "color": [1.0, 0.78, 0.34], "rough": 0.05},
+    {"name": "glass", "kind": "glass", "color": [1, 1, 1]},
+    {"name": "violet_glass", "kind": "glass", "color": [0.7, 0.3, 1.0]},
+    {"name": "red_gloss", "kind": "glossy", "color": [0.85, 0.07, 0.05]},
+    {"name": "lamp_a", "kind": "emissive", "user": "a"},
+    {"name": "lamp_b", "kind": "emissive", "user": "b"}
+  ],
+  "objects": [
+    {"type": "box", "pos": [0, -5, 0], "size": [60, 5, 60], "material": "floor"},
+    {"type": "box", "pos": [0, 20, -12], "size": [60, 25, 5], "material": "wall"},
+    {"type": "box", "pos": [-11, 20, 0], "size": [5, 25, 60], "material": "wall"},
+    {"type": "box", "pos": [11, 20, 0], "size": [5, 25, 60], "material": "wall"},
+    {"type": "sphere", "pos": [-3.3, 0.8, -2.5], "radius": 0.8, "material": "copper"},
+    {"type": "sphere", "pos": [-1.1, 0.8, -2.5], "radius": 0.8, "material": "mirror"},
+    {"type": "sphere", "pos": [1.1, 0.8, -2.5], "radius": 0.8, "material": "blue_gloss"},
+    {"type": "sphere", "pos": [3.3, 0.8, -2.5], "radius": 0.8, "material": "green_matte"},
+    {"type": "sphere", "pos": [-3.3, 0.8, 0.3], "radius": 0.8, "material": "gold"},
+    {"type": "sphere", "pos": [-1.1, 0.8, 0.3], "radius": 0.8, "material": "glass"},
+    {"type": "sphere", "pos": [1.1, 0.8, 0.3], "radius": 0.8, "material": "violet_glass"},
+    {"type": "sphere", "pos": [3.3, 0.8, 0.3], "radius": 0.8, "material": "red_gloss"},
+    {"type": "sphere", "pos": [-3, 5, 2], "radius": 0.7, "material": "lamp_a"},
+    {"type": "sphere", "pos": [4, 3.5, -2.5], "radius": 0.5, "material": "lamp_b"}
+  ]
+}

@@ -31,6 +31,7 @@
  {"id":29,"key":"look_speed","default":3,"min":1,"max":5,"native":true},
  {"id":30,"key":"gi_res","default":1,"min":0,"max":2,"native":true},
  {"id":31,"key":"ps1","default":0,"min":0,"max":1,"native":true},
+ {"id":32,"key":"scene","default":1,"min":0,"max":3,"native":true},
  {"id":100,"key":"theme","default":0,"min":0,"max":4,"native":false},
  {"id":102,"key":"preset","default":1,"min":0,"max":3,"native":false}
 ]

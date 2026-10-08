@@ -209,6 +209,23 @@ class SettingsSheet(ctx: Context, private val s: Settings, private val onTheme: 
     }
 
     private fun scene() {
+        content.addView(label(t("Scene", "Сцена")))
+        val cur = s.get(Ids.SCENE).toInt()
+        val file = Scenes.currentFile(context)
+        val sceneChips = Scenes.NAMES.mapIndexed { i, n -> M3Widgets.chip(context, n, cur == i) { set(Ids.SCENE, i.toFloat(), true) } } +
+            Scenes.files(context).map { f ->
+                M3Widgets.chip(context, f.nameWithoutExtension, cur == 3 && file == f.name) {
+                    val err = Scenes.load(context, s, f)
+                    if (err != null) android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
+                    else { onChanged(Ids.SCENE); rebuild() }
+                }
+            }
+        chipRow(sceneChips)
+        content.addView(TextView(context).apply {
+            text = t("Your own scenes: put .json files in ${Scenes.dir(context)} (format: docs/scenes.md on GitHub)",
+                "Свои сцены: положите .json в ${Scenes.dir(context)} (формат: docs/scenes.md на GitHub)")
+            textSize = 12f; setTextColor(M3.TEXT2); setPadding(px(20f), 0, px(16f), px(8f))
+        })
         chips(t("Camera mode", "Режим камеры"), Ids.CAM_MODE, listOf(t("Orbit", "Орбита") to 0f, t("Fly", "Полёт") to 1f, t("Helicopter", "Вертолёт") to 2f))
         toggle(t("On-screen sticks", "Экранные стики"), Ids.STICKS)
         val speeds = listOf("0.4×", "0.7×", "1×", "1.5×", "2.2×")

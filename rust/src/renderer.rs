@@ -26,15 +26,50 @@ pub struct Renderer {
     fps_n: u32,
     log_t: Instant,
     pub stats: Arc<Mutex<[f32; 16]>>,
+    custom: Option<crate::scene::SceneData>,
+    scene_loaded: i32,
 }
 
 impl Renderer {
     pub fn new(gfx: Gfx, win: (u32, u32), stats: Arc<Mutex<[f32; 16]>>) -> Renderer {
         let cam = Camera::new();
         let pose = cam.pose();
-        Renderer { gfx, store: Store::new(), cam, sticks: [0.0; 4], adaptive: AdaptiveRes::new(0.25, 0.33, 0.33), governor: Governor::new(), warmup: 3, last_ms: 0.0, win,
+        let mut r = Renderer { gfx, store: Store::new(), cam, sticks: [0.0; 4], adaptive: AdaptiveRes::new(0.25, 0.33, 0.33), governor: Governor::new(), warmup: 3, last_ms: 0.0, win,
             frame: 0, seed: 1, time: 0.0, last: Instant::now(), start: Instant::now(), prev_pose: pose,
-            prev_jitter: [0.0; 2], reset_history: true, fps_t: Instant::now(), fps_n: 0, log_t: Instant::now(), stats }
+            prev_jitter: [0.0; 2], reset_history: true, fps_t: Instant::now(), fps_n: 0, log_t: Instant::now(), stats, custom: None, scene_loaded: -1 };
+        r.apply_scene();
+        r
+    }
+
+    fn apply(&mut self, d: &crate::scene::SceneData) {
+        self.gfx.set_scene(&d.u);
+        self.cam.apply(d.cam);
+        self.prev_pose = self.cam.pose();
+        self.reset_history = true;
+    }
+
+    /// Loads the scene selected by the `scene` setting (built-in 0..2, or the last loaded file for 3).
+    fn apply_scene(&mut self) {
+        let i = self.store.get(id::SCENE) as i32;
+        if i == self.scene_loaded { return; }
+        if i >= 3 {
+            let Some(d) = self.custom.take() else { return };
+            self.apply(&d);
+            self.custom = Some(d);
+        } else {
+            let d = crate::scene::builtin(i as usize);
+            self.apply(&d);
+        }
+        self.scene_loaded = i;
+        log::info!("scene {i} applied");
+    }
+
+    /// A scene parsed from a file: becomes scene 3.
+    pub fn set_custom_scene(&mut self, d: crate::scene::SceneData) {
+        self.custom = Some(d);
+        self.scene_loaded = -1;
+        self.store.set(id::SCENE as i32, 3.0);
+        self.apply_scene();
     }
 
     pub fn set_param(&mut self, id: i32, v: f32) {
@@ -44,6 +79,7 @@ impl Renderer {
         if id as usize == id::CAM_MODE { self.cam.set_mode(Mode::from_param(self.store.get(id::CAM_MODE))); }
         if id as usize == id::FRAME_LIMIT { self.gfx.set_present_mode(self.store.on(id::FRAME_LIMIT)); }
         if id as usize == id::SCALE_IDX { self.reset_history = true; }
+        if id as usize == id::SCENE { self.apply_scene(); }
     }
 
     pub fn resize(&mut self, w: u32, h: u32) {
@@ -101,7 +137,7 @@ impl Renderer {
             exposure: s.get(id::EXPOSURE) * 0.5, tonemap: s.get(id::TONEMAP) as u32,
             sharpen: [0.0, 0.25, 0.5, 0.8][s.get(id::SHARPEN) as usize], hist_floor: s.hist_floor(),
             sky_kind: s.get(id::SKY) as u32, history_reset: self.reset_history as u32, pad0: 0, pad1: 0,
-            col_a: ca, pad2: 0.0, col_b: cb, pad3: 0.0,
+            col_a: ca, light_k: crate::params::LIGHT_K[s.get(id::LIGHT) as usize - 1], col_b: cb, pad3: 0.0,
             gi_block, gi_floor: 0.15, pad4: 0, pad5: 0,
         };
         let ms = self.gfx.render(&p, s.get(id::DENOISE) as u32, (self.frame & 1) as usize, overlay);

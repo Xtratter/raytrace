@@ -41,6 +41,28 @@ fn save_settings(s: &Store) {
     if let Err(e) = std::fs::write(&p, text) { log::warn!("settings not saved: {e}"); }
 }
 
+thread_local! { static SCENE_FILE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) }; }
+
+fn scenes_dir() -> Option<PathBuf> { config_path().and_then(|p| p.parent().map(|d| d.join("scenes"))) }
+
+fn scene_files() -> Vec<PathBuf> {
+    let Some(d) = scenes_dir() else { return vec![] };
+    let mut v: Vec<PathBuf> = std::fs::read_dir(d).map(|r| r.filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("json"))).collect()).unwrap_or_default();
+    v.sort();
+    v
+}
+
+impl Panel<'_> {
+    fn load_file(&mut self, f: &std::path::Path) {
+        let res = std::fs::read_to_string(f).map_err(|e| e.to_string()).and_then(|t| raytrace::scene::parse(&t));
+        match res {
+            Ok(d) => { self.r.set_custom_scene(d); self.changed = true; self.scene_err.clear(); SCENE_FILE.with(|c| *c.borrow_mut() = Some(f.to_path_buf())); }
+            Err(e) => *self.scene_err = format!("{}: {e}", f.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()),
+        }
+    }
+}
+
 fn system_is_russian() -> bool {
     if let Ok(l) = std::env::var("RAYTRACE_LANG") { return l.starts_with("ru"); }
     ["LC_ALL", "LC_MESSAGES", "LANG"].iter().filter_map(|k| std::env::var(k).ok()).find(|v| !v.is_empty()).is_some_and(|v| v.starts_with("ru"))
@@ -51,7 +73,7 @@ fn system_is_russian() -> bool {
 #[derive(Clone, Copy, PartialEq)]
 enum Tab { Quality, Smoothing, Light, Scene, App }
 
-struct Panel<'a> { r: &'a mut Renderer, ru: bool, changed: bool }
+struct Panel<'a> { r: &'a mut Renderer, ru: bool, changed: bool, scene_err: &'a mut String }
 
 impl Panel<'_> {
     fn t<'s>(&self, en: &'s str, ru: &'s str) -> &'s str { if self.ru { ru } else { en } }
@@ -138,6 +160,24 @@ impl Panel<'_> {
     }
 
     fn scene(&mut self, ui: &mut egui::Ui) {
+        let names = [self.t("Classic", "Классика"), self.t("Sun room", "Солнечная комната"), self.t("Materials", "Витрина материалов")];
+        let cur = self.r.store.get(id::SCENE) as usize;
+        ui.label(egui::RichText::new(self.t("Scene", "Сцена")).small().weak());
+        ui.horizontal_wrapped(|ui| {
+            for (k, n) in names.iter().enumerate() {
+                if ui.selectable_label(cur == k, *n).clicked() { self.set(id::SCENE, k as f32); self.scene_err.clear(); }
+            }
+            for f in scene_files() {
+                let label = f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                if ui.selectable_label(cur == 3 && SCENE_FILE.with(|c| c.borrow().as_deref() == Some(f.as_path())), label).clicked() {
+                    self.load_file(&f);
+                }
+            }
+        });
+        if !self.scene_err.is_empty() { ui.colored_label(egui::Color32::LIGHT_RED, self.scene_err.as_str()); }
+        ui.label(egui::RichText::new(self.t("Your scenes: .json files in ", "Свои сцены: файлы .json в ")).small().weak());
+        ui.label(egui::RichText::new(scenes_dir().map(|p| p.display().to_string()).unwrap_or_default()).small().weak());
+        ui.add_space(6.0);
         let speeds = ["0.4×", "0.7×", "1×", "1.5×", "2.2×"];
         self.chips(ui, self.t("Camera mode", "Режим камеры"), id::CAM_MODE, &[(self.t("Orbit", "Орбита"), 0.0), (self.t("Fly", "Полёт"), 1.0), (self.t("Helicopter", "Вертолёт"), 2.0)]);
         self.stepper(ui, self.t("Move speed", "Скорость движения"), id::MOVE_SPEED, 1.0, |v| speeds[v as usize - 1].to_string());
@@ -204,6 +244,7 @@ struct State {
     panel_open: bool,
     tab: Tab,
     ru: bool,
+    scene_err: String,
 }
 
 struct App { state: Option<State> }
@@ -221,10 +262,11 @@ impl State {
         let egui_rend = egui_wgpu::Renderer::new(gfx.device(), format, None, 1, false);
         let stats = Arc::new(Mutex::new([0.0f32; 16]));
         let mut r = Renderer::new(gfx, (w, h), stats.clone());
-        for (i, v) in load_settings() { r.set_param(i as i32, v); }
+        for (i, v) in load_settings() { if i != id::SCENE || v < 2.5 { r.set_param(i as i32, v); } }
+        if let Some(v) = std::env::var("RAYTRACE_SCENE").ok().and_then(|s| s.parse::<f32>().ok()) { r.set_param(id::SCENE as i32, v); }
         let ctx = egui::Context::default();
         let egui_state = egui_winit::State::new(ctx.clone(), egui::ViewportId::ROOT, &window, Some(window.scale_factor() as f32), None, None);
-        State { window, r, stats, ctx, egui_state, egui_rend, keys: HashSet::new(), dragging: false, last_cursor: None, panel_open: true, tab: Tab::Quality, ru: system_is_russian() }
+        State { window, r, stats, ctx, egui_state, egui_rend, keys: HashSet::new(), dragging: false, last_cursor: None, panel_open: std::env::var("RAYTRACE_PANEL").map_or(true, |v| v != "0"), tab: Tab::Quality, ru: system_is_russian(), scene_err: String::new() }
     }
 
     fn held(&self, k: KeyCode) -> f32 { self.keys.contains(&k) as u32 as f32 }
@@ -301,7 +343,7 @@ impl State {
             }
             if open {
                 egui::SidePanel::right("settings").exact_width(340.0).resizable(false).show(ctx, |ui| {
-                    let mut p = Panel { r: &mut self.r, ru, changed: false };
+                    let mut p = Panel { r: &mut self.r, ru, changed: false, scene_err: &mut self.scene_err };
                     ui.horizontal_wrapped(|ui| {
                         let tabs = [(Tab::Quality, "Quality", "Качество"), (Tab::Smoothing, "Smoothing", "Сглаживание"), (Tab::Light, "Light", "Свет"),
                             (Tab::Scene, "Scene", "Сцена"), (Tab::App, "App", "Прил.")];

@@ -1,6 +1,6 @@
 //! Parameter table shared with Kotlin (see ../params.json). Ids are stable; do not renumber.
 
-pub const N: usize = 32;
+pub const N: usize = 33;
 
 #[derive(Clone, Copy)]
 pub struct Def {
@@ -47,6 +47,7 @@ pub const DEFS: [Def; N] = [
     d(29, 3.0, 1.0, 5.0),  // look_speed
     d(30, 1.0, 0.0, 2.0),  // gi_res
     d(31, 0.0, 0.0, 1.0),  // ps1 (retro look)
+    d(32, 1.0, 0.0, 3.0),  // scene (0 classic, 1 sun room, 2 materials, 3 loaded file)
 ];
 
 pub mod id {
@@ -82,6 +83,7 @@ pub mod id {
     pub const LOOK_SPEED: usize = 29;
     pub const GI_RES: usize = 30;
     pub const PS1: usize = 31;
+    pub const SCENE: usize = 32;
 }
 
 /// Bits of `Params.flags` (mirrored in common.wgsl).
@@ -126,7 +128,7 @@ pub fn affects_history(id: usize) -> bool {
     matches!(
         id,
         id::MODE | id::BOUNCES | id::SPP | id::SHADOWS | id::GI | id::CAUSTICS | id::REFLECTIONS
-            | id::GI_RES | id::PS1 | id::LIGHT | id::COL_A | id::COL_B | id::FOV | id::SKY
+            | id::GI_RES | id::PS1 | id::SCENE | id::LIGHT | id::COL_A | id::COL_B | id::FOV | id::SKY
     )
 }
 
@@ -280,7 +282,7 @@ mod tests {
 
     #[test]
     fn new_params_defs_and_history() {
-        assert_eq!(N, 32);
+        assert_eq!(N, 33);
         assert_eq!(id::CAM_MODE, 26);
         assert_eq!(id::STICKS, 27);
         assert_eq!(id::MOVE_SPEED, 28);

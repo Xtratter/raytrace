@@ -1,4 +1,3 @@
-const TARGET: [f32; 3] = [0.0, 1.2, -1.8];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
@@ -17,15 +16,38 @@ impl Mode {
 const LOOK_RATE: f32 = 1.6; // rad/s at full deflection
 const MOVE_RATE: f32 = 2.5; // units/s at full deflection
 const HELI_PITCH: f32 = -0.12; // slightly down, rad
-const FLY_MIN: [f32; 3] = [-5.5, 0.3, -6.5];
-const FLY_MAX: [f32; 3] = [5.5, 8.0, 12.0];
+
+/// Per-scene camera setup: orbit target and start pose, distance range and position limits (orbit and fly).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SceneCam {
+    pub target: [f32; 3],
+    pub yaw: f32,
+    pub pitch: f32,
+    pub dist: f32,
+    pub dist_range: [f32; 2],
+    pub orbit_min: [f32; 3],
+    pub orbit_max: [f32; 3],
+    pub fly_min: [f32; 3],
+    pub fly_max: [f32; 3],
+}
+
+impl Default for SceneCam {
+    /// The classic scene.
+    fn default() -> Self {
+        SceneCam {
+            target: [0.0, 1.2, -1.8], yaw: 0.3, pitch: 0.35, dist: 10.5, dist_range: [3.0, 14.0],
+            orbit_min: [-5.5, 0.3, -6.5], orbit_max: [5.5, 12.0, 20.0],
+            fly_min: [-5.5, 0.3, -6.5], fly_max: [5.5, 8.0, 12.0],
+        }
+    }
+}
 
 /// NaN/inf -> 0, each value clamped to [-1, 1].
 pub fn sanitize_sticks(s: [f32; 4]) -> [f32; 4] {
     s.map(|v| if v.is_finite() { v.clamp(-1.0, 1.0) } else { 0.0 })
 }
 
-/// Orbit: position = TARGET + dist*(sin(yaw)cos(pitch), sin(pitch), cos(yaw)cos(pitch)).
+/// Orbit: position = target + dist*(sin(yaw)cos(pitch), sin(pitch), cos(yaw)cos(pitch)).
 /// Fly: forward = (sin(fly_yaw)cos(fly_pitch), sin(fly_pitch), cos(fly_yaw)cos(fly_pitch)); decreasing
 /// yaw turns right, positive pitch looks up. right = (-cos(yaw), 0, sin(yaw)).
 pub struct Camera {
@@ -38,16 +60,28 @@ pub struct Camera {
     pub fly_pos: [f32; 3],
     pub fly_yaw: f32,
     pub fly_pitch: f32,
+    pub lim: SceneCam,
 }
 
 impl Camera {
     pub fn new() -> Camera {
+        Camera::with(SceneCam::default())
+    }
+
+    pub fn with(lim: SceneCam) -> Camera {
         let mut c = Camera {
-            yaw: 0.3, pitch: 0.35, dist: 10.5, auto_phase: 0.0, auto_off: 0.0,
-            mode: Mode::Orbit, fly_pos: [0.0; 3], fly_yaw: 0.0, fly_pitch: 0.0,
+            yaw: lim.yaw, pitch: lim.pitch, dist: lim.dist, auto_phase: 0.0, auto_off: 0.0,
+            mode: Mode::Orbit, fly_pos: [0.0; 3], fly_yaw: 0.0, fly_pitch: 0.0, lim,
         };
         c.enter_fly_from_orbit();
         c
+    }
+
+    /// Switch to another scene's camera setup, keeping the current mode (fly pose restarts at the scene's orbit pose).
+    pub fn apply(&mut self, lim: SceneCam) {
+        let m = self.mode;
+        *self = Camera::with(lim);
+        self.set_mode(m);
     }
 
     pub fn mode(&self) -> Mode {
@@ -60,14 +94,14 @@ impl Camera {
             Mode::Orbit => {
                 let m = self.mode;
                 let (fp, fy, fpi) = (self.fly_pos, self.fly_yaw, self.fly_pitch);
-                *self = Camera::new();
+                *self = Camera::with(self.lim);
                 self.mode = m;
                 self.fly_pos = fp;
                 self.fly_yaw = fy;
                 self.fly_pitch = fpi;
             }
             Mode::Fly | Mode::Heli => {
-                let d = Camera::new();
+                let d = Camera::with(self.lim);
                 self.fly_pos = d.fly_pos;
                 self.fly_yaw = d.fly_yaw;
                 self.fly_pitch = d.fly_pitch;
@@ -90,12 +124,13 @@ impl Camera {
 
     fn orbit_pose(&self) -> ([f32; 3], [f32; 3]) {
         let yaw = self.yaw + self.auto_off;
+        let t = self.lim.target;
         let p = [
-            (TARGET[0] + self.dist * yaw.sin() * self.pitch.cos()).clamp(-5.5, 5.5),
-            (TARGET[1] + self.dist * self.pitch.sin()).clamp(0.3, 12.0),
-            (TARGET[2] + self.dist * yaw.cos() * self.pitch.cos()).clamp(-6.5, 20.0),
+            (t[0] + self.dist * yaw.sin() * self.pitch.cos()).clamp(self.lim.orbit_min[0], self.lim.orbit_max[0]),
+            (t[1] + self.dist * self.pitch.sin()).clamp(self.lim.orbit_min[1], self.lim.orbit_max[1]),
+            (t[2] + self.dist * yaw.cos() * self.pitch.cos()).clamp(self.lim.orbit_min[2], self.lim.orbit_max[2]),
         ];
-        (p, TARGET)
+        (p, t)
     }
 
     fn enter_fly_from_orbit(&mut self) {
@@ -115,7 +150,7 @@ impl Camera {
 
     fn clamp_fly(&mut self) {
         for i in 0..3 {
-            self.fly_pos[i] = self.fly_pos[i].clamp(FLY_MIN[i], FLY_MAX[i]);
+            self.fly_pos[i] = self.fly_pos[i].clamp(self.lim.fly_min[i], self.lim.fly_max[i]);
         }
     }
 
@@ -142,7 +177,7 @@ impl Camera {
             return;
         }
         match self.mode {
-            Mode::Orbit => self.dist = (self.dist * f).clamp(3.0, 14.0),
+            Mode::Orbit => self.dist = (self.dist * f).clamp(self.lim.dist_range[0], self.lim.dist_range[1]),
             Mode::Fly | Mode::Heli => {
                 let fw = self.fly_forward();
                 let k = (1.0 - f).clamp(-10.0, 1.0) * 2.0;
@@ -170,7 +205,7 @@ impl Camera {
                 self.yaw += rx * lr; // camera moves right (as seen from the camera)
                 // right stick up = camera up; left stick right = camera up at half rate
                 self.pitch = (self.pitch + ry * lr + lx * 0.5 * lr).clamp(0.02, 1.45);
-                self.dist = (self.dist * (-ly * dt * move_f).exp()).clamp(3.0, 14.0);
+                self.dist = (self.dist * (-ly * dt * move_f).exp()).clamp(self.lim.dist_range[0], self.lim.dist_range[1]);
                 let w = match auto {
                     1 => 0.35,
                     2 => 0.9,

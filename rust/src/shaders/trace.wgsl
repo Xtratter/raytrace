@@ -36,17 +36,29 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
     let p = ro + rd * h.x;
     var m = material(p, h.y);
     if (b == 0) { g_depth = h.x; g_id = h.y; g_n = -rd; }
-    if (!has(F_REFLECT) && m.kind != 0u) {
+    if (!has(F_REFLECT) && m.kind != 0u && m.kind != 3u) {
       if (m.kind == 2u) { m.albedo = vec3<f32>(0.7, 0.8, 0.9); }
       m.kind = 0u;
       m.rough = 0.0;
     }
 
-    if (b == 0 && !pt && m.kind == 0u && m.emit.x <= 0.0 && has(F_GI) && has(F_GI_SPLIT)) {
+    if (m.kind == 4u) {
+      // glossy: Fresnel-weighted choice between a mirror-like coat and the diffuse base (probabilities carry the weights)
+      let fr = schlick(clamp(-dot(rd, calc_normal(p)), 0.0, 1.0), 0.05);
+      if (has(F_REFLECT) && rnd() < fr) {
+        m.kind = 1u;
+        m.albedo = vec3<f32>(1.0);
+        m.rough = max(m.rough, 0.02);
+      } else {
+        m.kind = 0u;
+      }
+    }
+
+    if (b == 0 && !pt && m.kind == 0u && has(F_GI) && has(F_GI_SPLIT)) {
       g_alb = vec4<f32>(m.albedo, 1.0);
     }
 
-    if (m.emit.x > 0.0) {
+    if (m.kind == 3u) {
       if (spec) {
         col += thr * m.emit;
       }
@@ -60,14 +72,15 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
     let nf = select(-n, n, front);
 
     if (m.kind == 0u) {
+      let dl = direct_light(p, nf, h.y); // one call site: the GPU compiler inlines every call
       if (!pt) {
-        var lo = direct_light(p, nf, select(16, MENGER_SHADOW_STEPS, abs(h.y - 5.0) < 0.5), abs(h.y - 5.0) < 0.5, h.y);
+        var lo = dl;
         if (has(F_CAUSTICS)) { lo += caustic(p, nf); }
         if (has(F_GI) && g_alb.w < 0.5) { lo += indirect(p, nf); }
         col += thr * m.albedo * lo;
         break;
       }
-      col += thr * m.albedo * direct_light(p, nf, MAX_STEPS, true, h.y);
+      col += thr * m.albedo * dl;
       if (!has(F_GI)) { break; }
       diff_seen = true;
       thr = thr * m.albedo;
@@ -108,6 +121,7 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
       } else {
         rd = rr;
         ro = p - nf * 0.003;
+        thr = thr * sqrt(m.albedo);
         inside = front;
       }
       spec = true;

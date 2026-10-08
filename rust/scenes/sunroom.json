@@ -1,0 +1,40 @@
+{
+  "name": "Sun room",
+  "camera": {"target": [-0.4, 1.3, -0.5], "yaw": 0.35, "pitch": 0.3, "dist": 5.6, "dist_range": [2.5, 8],
+             "orbit_min": [-3.6, 0.4, -4.6], "orbit_max": [3.6, 4.2, 4.7], "fly_min": [-3.6, 0.4, -4.6], "fly_max": [3.6, 4.2, 4.7]},
+  "sun": {"dir": [0.3, 1.0, 0.2], "color": [3.0, 2.7, 2.2], "angle_deg": 1.2},
+  "materials": [
+    {"name": "floor", "color": [0.72, 0.66, 0.58], "checker": [0.4, 0.36, 0.32], "checker_scale": 0.8},
+    {"name": "back", "color": [0.86, 0.83, 0.76]},
+    {"name": "left", "color": [0.72, 0.2, 0.17]},
+    {"name": "right", "color": [0.15, 0.42, 0.7]},
+    {"name": "ceiling", "color": [0.88, 0.88, 0.86]},
+    {"name": "red_glass", "kind": "glass", "color": [1.0, 0.18, 0.15]},
+    {"name": "green_glass", "kind": "glass", "color": [0.2, 0.95, 0.3]},
+    {"name": "blue_glass", "kind": "glass", "color": [0.2, 0.4, 1.0]},
+    {"name": "mirror", "kind": "metal", "color": [0.95, 0.95, 0.97]},
+    {"name": "gold", "kind": "metal", "color": [1.0, 0.78, 0.34], "rough": 0.2},
+    {"name": "matte", "color": [0.9, 0.9, 0.88]},
+    {"name": "gloss_red", "kind": "glossy", "color": [0.8, 0.08, 0.06]},
+    {"name": "glass", "kind": "glass", "color": [1, 1, 1]},
+    {"name": "stone", "color": [0.8, 0.74, 0.62]}
+  ],
+  "objects": [
+    {"type": "box", "pos": [0, -0.5, 0], "size": [6, 0.5, 7], "material": "floor"},
+    {"type": "box", "pos": [0, 2.25, -6], "size": [6, 3, 1], "material": "back"},
+    {"type": "box", "pos": [0, 2.25, 6], "size": [6, 3, 1], "material": "back"},
+    {"type": "box", "pos": [-5, 2.25, 0], "size": [1, 3, 7], "material": "left"},
+    {"type": "box", "pos": [5, 2.25, 0], "size": [1, 3, 7], "material": "right"},
+    {"type": "box", "pos": [-3.25, 5.0, 0], "size": [2.75, 0.5, 7], "material": "ceiling"},
+    {"type": "box", "pos": [3.25, 5.0, 0], "size": [2.75, 0.5, 7], "material": "ceiling"},
+    {"type": "box", "pos": [-1.7, 2.9, -0.2], "size": [0.6, 0.025, 0.6], "material": "red_glass", "spin": 0.15},
+    {"type": "box", "pos": [-1.2, 2.3, 0.4], "size": [0.6, 0.025, 0.6], "material": "green_glass", "spin": -0.2},
+    {"type": "box", "pos": [-1.6, 1.7, -1.0], "size": [0.6, 0.025, 0.6], "material": "blue_glass", "spin": 0.4},
+    {"type": "sphere", "pos": [1.8, 0.8, -1.2], "radius": 0.8, "material": "mirror"},
+    {"type": "sphere", "pos": [-2.7, 0.6, 1.6], "radius": 0.6, "material": "gold"},
+    {"type": "sphere", "pos": [0.6, 0.7, 1.4], "radius": 0.7, "material": "matte"},
+    {"type": "sphere", "pos": [-1.0, 0.55, 2.0], "radius": 0.55, "material": "gloss_red"},
+    {"type": "sphere", "pos": [-0.9, 0.6, -2.2], "radius": 0.6, "material": "glass"},
+    {"type": "menger", "pos": [2.5, 0.65, -3.2], "size": 0.65, "spin": 0.3, "material": "stone"}
+  ]
+}

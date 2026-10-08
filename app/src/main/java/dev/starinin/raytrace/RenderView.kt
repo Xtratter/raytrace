@@ -21,6 +21,7 @@ class RenderView(ctx: Context, private val settings: Settings) : SurfaceView(ctx
         if (running) { Native.resize(w, hh); return }   // same surface, new size: keep the engine and the camera
         Native.start(h.surface, w, hh)
         settings.pushAll()
+        Scenes.restore(context, settings)
         running = true
     }
     override fun surfaceDestroyed(h: SurfaceHolder) { Native.stop(); running = false }

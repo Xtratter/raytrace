@@ -8,7 +8,7 @@ struct Params {
   mode: u32, flags: u32, bounces: u32, spp: u32,
   exposure: f32, tonemap: u32, sharpen: f32, hist_floor: f32,
   sky_kind: u32, history_reset: u32, pad0: u32, pad1: u32,
-  col_a: vec3<f32>, pad2: f32,
+  col_a: vec3<f32>, lk: f32,
   col_b: vec3<f32>, pad3: f32,
   gi_block: u32, gi_floor: f32, pad4: u32, pad5: u32,
 };

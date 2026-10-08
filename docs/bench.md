@@ -116,3 +116,7 @@ Per-pass profile of 1.3.0 (trace pass, ms): caustics ~10, reflections/glass chai
 - Smaller step budgets for deep reflection rays (72/48/32): no measurable change, dropped.
 - Performance preset with GI at Quarter: 40.0 fps vs 52.9 fps with GI off (+3.8 ms) — not adopted (the preset stays GI off).
 Lesson: the Adreno 650 does not turn stochastic or tiled skipping of a small branch into time savings here; the next real gains need structural changes (splitting the trace pass, cheaper reflection chains) rather than skipping work per pixel.
+
+## Tried after 1.3.0: integer (fixed-point) Menger sponge (08.10.2026)
+
+- `sd_menger` in Q16 fixed point (one float->int conversion, `& mask` instead of `floor`, integer divide by the level scale, i32 `abs`/`max`): same picture, but SLOWER on the Adreno 650. A/B back to back at fixed 0.33x hybrid (1=1 2=0 18=0 19=0): float 42.6-44.2 ms GPU (trace pass 33-35 ms), integer 66-72 ms (trace pass 57-62 ms), about +60%. The first float run after an install was 65 ms (cold); every later float run was 43 ms. Dropped.

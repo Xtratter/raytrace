@@ -42,18 +42,6 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
       m.rough = 0.0;
     }
 
-    if (m.kind == 4u) {
-      // glossy: Fresnel-weighted choice between a mirror-like coat and the diffuse base (probabilities carry the weights)
-      let fr = schlick(clamp(-dot(rd, calc_normal(p)), 0.0, 1.0), 0.05);
-      if (has(F_REFLECT) && rnd() < fr) {
-        m.kind = 1u;
-        m.albedo = vec3<f32>(1.0);
-        m.rough = max(m.rough, 0.02);
-      } else {
-        m.kind = 0u;
-      }
-    }
-
     if (b == 0 && !pt && m.kind == 0u && has(F_GI) && has(F_GI_SPLIT)) {
       g_alb = vec4<f32>(m.albedo, 1.0);
     }
@@ -67,6 +55,17 @@ fn trace(ro_in: vec3<f32>, rd_in: vec3<f32>) -> vec3<f32> {
 
     let n = calc_normal(p);
     if (b == 0) { g_n = n; }
+    if (m.kind == 4u) {
+      // glossy: Fresnel-weighted choice between a mirror-like coat and the diffuse base (probabilities carry the weights)
+      let fr = schlick(clamp(-dot(rd, n), 0.0, 1.0), 0.05);
+      if (has(F_REFLECT) && rnd() < fr) {
+        m.kind = 1u;
+        m.albedo = vec3<f32>(1.0);
+        m.rough = max(m.rough, 0.02);
+      } else {
+        m.kind = 0u;
+      }
+    }
     if (g_skip) { break; }
     let front = dot(rd, n) < 0.0;
     let nf = select(-n, n, front);

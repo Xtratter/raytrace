@@ -60,7 +60,6 @@ pub struct Gfx {
     config: wgpu::SurfaceConfiguration,
     modes: Vec<wgpu::PresentMode>,
     params_buf: wgpu::Buffer,
-    scene_buf: wgpu::Buffer,
     step_bufs: [wgpu::Buffer; 3],
     gi_step_bufs: [wgpu::Buffer; 2],
     sampler: wgpu::Sampler,
@@ -162,7 +161,7 @@ impl Gfx {
 
         let cs = wgpu::ShaderStages::COMPUTE;
         let fs = wgpu::ShaderStages::FRAGMENT;
-        let trace_bgl = bgl(&device, "trace", &[uniform(0, cs), tex_out(1, wgpu::TextureFormat::Rgba16Float), tex_out(2, wgpu::TextureFormat::Rgba32Float), tex_out(3, wgpu::TextureFormat::Rgba16Float), uniform(4, cs)]);
+        let trace_bgl = bgl(&device, "trace", &[uniform(0, cs), tex_out(1, wgpu::TextureFormat::Rgba16Float), tex_out(2, wgpu::TextureFormat::Rgba32Float), tex_out(3, wgpu::TextureFormat::Rgba16Float)]);
         let temporal_bgl = bgl(&device, "temporal", &[
             uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_in(3, cs, false), tex_in(4, cs, false),
             tex_out(5, wgpu::TextureFormat::Rgba16Float),
@@ -172,7 +171,7 @@ impl Gfx {
             tex_out(3, wgpu::TextureFormat::Rgba16Float), uniform(4, cs),
         ]);
         let f16 = wgpu::TextureFormat::Rgba16Float;
-        let gi_trace_bgl = bgl(&device, "gi_trace", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_out(3, f16), uniform(4, cs)]);
+        let gi_trace_bgl = bgl(&device, "gi_trace", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_out(3, f16)]);
         let gi_temporal_bgl = bgl(&device, "gi_temporal", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_in(3, cs, false), tex_in(4, cs, false), tex_out(5, f16)]);
         let gi_atrous_bgl = bgl(&device, "gi_atrous", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_out(3, f16), uniform(4, cs)]);
         let composite_bgl = bgl(&device, "composite", &[uniform(0, cs), tex_in(1, cs, false), tex_in(2, cs, false), tex_in(3, cs, false), tex_in(4, cs, false), tex_out(5, f16)]);
@@ -183,7 +182,8 @@ impl Gfx {
                 entry_point: Some("main"), compilation_options: Default::default(), cache: None,
             })
         };
-        let gi_trace_pl = mk("gi_trace", crate::shaders::gi_trace(), &gi_trace_bgl);
+        let scene0 = crate::scene::builtin(crate::scene::DEFAULT_SCENE);
+        let gi_trace_pl = mk("gi_trace", crate::shaders::gi_trace(&scene0), &gi_trace_bgl);
         let gi_temporal_pl = mk("gi_temporal", crate::shaders::gi_temporal(), &gi_temporal_bgl);
         let gi_atrous_pl = mk("gi_atrous", crate::shaders::gi_atrous(), &gi_atrous_bgl);
         let composite_pl = mk("composite", crate::shaders::composite(), &composite_bgl);
@@ -193,7 +193,7 @@ impl Gfx {
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering) },
         ]);
 
-        let trace_mod = shader(&device, "trace", crate::shaders::trace());
+        let trace_mod = shader(&device, "trace", crate::shaders::trace(&scene0));
         let temporal_mod = shader(&device, "temporal", crate::shaders::temporal());
         let temporal_pl = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("temporal"), layout: Some(&layout(&device, &temporal_bgl)), module: &temporal_mod,
@@ -228,10 +228,6 @@ impl Gfx {
             label: Some("params"), size: std::mem::size_of::<GpuParams>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false,
         });
-        let scene_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("scene"), size: std::mem::size_of::<crate::scene::SceneU>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false,
-        });
         let step = || device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("step"), size: NonZeroU64::new(16).unwrap().get(),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false,
@@ -258,7 +254,7 @@ impl Gfx {
         log::info!("gpu timestamps: {}", has_ts);
 
         Gfx {
-            surface, device, queue, config, modes: caps.present_modes, params_buf, scene_buf, step_bufs, gi_step_bufs, sampler,
+            surface, device, queue, config, modes: caps.present_modes, params_buf, step_bufs, gi_step_bufs, sampler,
             gi_trace_pl, gi_trace_bgl, gi_temporal_pl, gi_temporal_bgl, gi_atrous_pl, gi_atrous_bgl, composite_pl, composite_bgl,
             trace_pl, trace_bgl, temporal_pl, temporal_bgl, atrous_pl, atrous_bgl, present_pl, present_bgl, targets: None, prof, pass_ms: [0.0; 8], _window: keep,
         }
@@ -267,9 +263,21 @@ impl Gfx {
     /// Per-pass GPU ms of the last frame (slots: trace, gi_trace, gi_temporal, gi_atrous, temporal, atrous, composite, present); 0 = unsupported/unmeasured.
     pub fn pass_ms(&self) -> [f32; 8] { self.pass_ms }
 
-    /// Uploads a scene (the next frame renders it).
-    pub fn set_scene(&self, u: &crate::scene::SceneU) {
-        self.queue.write_buffer(&self.scene_buf, 0, bytemuck::bytes_of(u));
+    /// Compiles the scene into the trace and GI passes (the scene's numbers become shader constants; takes a moment).
+    pub fn set_scene(&mut self, sc: &crate::scene::SceneData) {
+        let t0 = Instant::now();
+        let mk = |name: &str, src: String, l: &wgpu::BindGroupLayout| {
+            let m = shader(&self.device, name, src);
+            self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(name), layout: Some(&layout(&self.device, l)), module: &m,
+                entry_point: Some("main"), compilation_options: Default::default(), cache: None,
+            })
+        };
+        let t = mk("trace", crate::shaders::trace(sc), &self.trace_bgl);
+        let g = mk("gi_trace", crate::shaders::gi_trace(sc), &self.gi_trace_bgl);
+        self.trace_pl = t;
+        self.gi_trace_pl = g;
+        log::info!("scene \"{}\" compiled in {:.0} ms", sc.name, t0.elapsed().as_secs_f32() * 1000.0);
     }
 
     pub fn device(&self) -> &wgpu::Device { &self.device }
@@ -357,7 +365,6 @@ impl Gfx {
             (1, wgpu::BindingResource::TextureView(&t.raw.view)),
             (2, wgpu::BindingResource::TextureView(&t.gbuf[parity].view)),
             (3, wgpu::BindingResource::TextureView(&t.alb.view)),
-            (4, self.scene_buf.as_entire_binding()),
         ]);
         let temporal_bg = bg(dev, &self.temporal_bgl, &[
             (0, pb.clone()),
@@ -393,8 +400,7 @@ impl Gfx {
                 (1, wgpu::BindingResource::TextureView(&t.gbuf[parity].view)),
                 (2, wgpu::BindingResource::TextureView(&t.alb.view)),
                 (3, wgpu::BindingResource::TextureView(&g.raw.view)),
-                (4, self.scene_buf.as_entire_binding()),
-            ]);
+                ]);
             let b = bg(dev, &self.gi_temporal_bgl, &[
                 (0, pb.clone()),
                 (1, wgpu::BindingResource::TextureView(&g.raw.view)),

@@ -109,49 +109,44 @@ fn opU(a: vec2<f32>, d: f32, id: f32) -> vec2<f32> {
   return a;
 }
 
-// returns (distance, material id)
-
-struct Prim { p0: vec4<f32>, p1: vec4<f32>, p2: vec4<f32>, p3: vec4<f32> };
-struct MatU { a: vec4<f32>, b: vec4<f32>, c: vec4<f32>, d: vec4<f32> };
-// Mirrors scene::SceneU (rust/src/scene.rs): prims p0 = (pos, kind), p1 = (size, aux), p2 = (material, spin, glass-pane flag, bound radius), p3 = (pos2, 0).
-struct SceneU {
-  sun_dir: vec4<f32>, sun_col: vec4<f32>,
-  lamp0: vec4<f32>, lamp1: vec4<f32>, lamp_c0: vec4<f32>, lamp_c1: vec4<f32>, caustic: vec4<f32>,
-  prims: array<Prim, 19>, mats: array<MatU, 16>,
-};
-@group(0) @binding(4) var<uniform> S: SceneU;
-
-// map(), map_gi(), occ_all(), prim_mat() and mat_*() are generated per build (shaders.rs): they unroll the primitive list with constant indices.
-fn prim_local(p: vec3<f32>, pos: vec3<f32>, spin: f32) -> vec3<f32> {
-  if (spin == 0.0) { return p - pos; }
-  return rot_y(p - pos, P.time * spin);
+// Shape helpers: the scene's generated map() / occ_all() call them with literal arguments, so the driver folds every constant.
+fn lp(p: vec3<f32>, c: vec3<f32>, spin: f32) -> vec3<f32> {
+  if (spin == 0.0) { return p - c; }
+  return rot_y(p - c, P.time * spin);
 }
 
-// Cheap evaluator for the sphere / box slots (kind 1 sphere, else box).
-fn eval_simple(p0: vec4<f32>, p1: vec4<f32>, p2: vec4<f32>, p: vec3<f32>) -> f32 {
-  if (p0.w < 1.5) { return length(p - p0.xyz) - p1.x; }
-  return sd_box(prim_local(p, p0.xyz, p2.y), p1.xyz - vec3<f32>(p1.w)) - p1.w;
+fn d_sphere(p: vec3<f32>, c: vec3<f32>, r: f32) -> f32 { return length(p - c) - r; }
+
+fn d_box(p: vec3<f32>, c: vec3<f32>, h: vec3<f32>, rd: f32, spin: f32) -> f32 {
+  return sd_box(lp(p, c, spin), h - vec3<f32>(rd)) - rd;
 }
 
-// Complex shapes have one dedicated slot each (16 Menger sponge, 17 torus, 18 blob pair) so that each shape's code
-// exists once in the shader (the GPU compiler inlines every call site). fast: the Menger sponge is replaced by its (unrotated) box.
-fn eval_menger(p0: vec4<f32>, p1: vec4<f32>, p2: vec4<f32>, p: vec3<f32>, fast: bool) -> f32 {
-  let bd = length(p - p0.xyz) - p2.w;
+fn d_torus(p: vec3<f32>, c: vec3<f32>, rr: vec2<f32>, spin: f32, bound: f32) -> f32 {
+  let bd = length(p - c) - bound;
   if (bd > 0.2) { return bd; }
-  if (fast) { return sd_box(p - p0.xyz, vec3<f32>(p1.x)); }
-  return sd_menger(prim_local(p, p0.xyz, p2.y) * (1.0 / p1.x)) * p1.x;
+  return sd_torus(lp(p, c, spin), rr);
 }
 
-fn eval_torus(p0: vec4<f32>, p1: vec4<f32>, p2: vec4<f32>, p: vec3<f32>) -> f32 {
-  let bd = length(p - p0.xyz) - p2.w;
+// fast: the sponge is replaced by its (unrotated) bounding box (GI and secondary rays)
+fn d_menger(p: vec3<f32>, c: vec3<f32>, s: f32, spin: f32, bound: f32, fast: bool) -> f32 {
+  let bd = length(p - c) - bound;
   if (bd > 0.2) { return bd; }
-  return sd_torus(prim_local(p, p0.xyz, p2.y), p1.xy);
+  if (fast) { return sd_box(p - c, vec3<f32>(s)); }
+  return sd_menger(lp(p, c, spin) * (1.0 / s)) * s;
 }
 
-fn eval_pair(p0: vec4<f32>, p1: vec4<f32>, p2: vec4<f32>, p3: vec4<f32>, p: vec3<f32>) -> f32 {
-  let bd = length(p - p0.xyz) - p2.w;
+fn d_cyl(p: vec3<f32>, c: vec3<f32>, r: f32, h: f32, spin: f32, bound: f32) -> f32 {
+  let bd = length(p - c) - bound;
   if (bd > 0.2) { return bd; }
-  return smin(length(p - p0.xyz) - p1.x, length(p - p3.xyz) - p1.y, p1.w);
+  let q = lp(p, c, spin);
+  let d = vec2<f32>(length(q.xz) - r, abs(q.y) - h);
+  return min(max(d.x, d.y), 0.0) + length(max(d, vec2<f32>(0.0)));
+}
+
+fn d_pair(p: vec3<f32>, c: vec3<f32>, c2: vec3<f32>, r1: f32, r2: f32, k: f32, bound: f32) -> f32 {
+  let bd = length(p - c) - bound;
+  if (bd > 0.2) { return bd; }
+  return smin(length(p - c) - r1, length(p - c2) - r2, k);
 }
 
 fn calc_normal(p: vec3<f32>) -> vec3<f32> {
@@ -223,36 +218,15 @@ struct Mat {
   rough: f32,
 };
 
-fn material(p: vec3<f32>, id: f32) -> Mat {
-  let mi = prim_mat(i32(id + 0.5));
-  let a = mat_a(mi);
-  let b = mat_b(mi);
-  let c = mat_c(mi);
-  let d = mat_d(mi);
-  var m: Mat;
-  m.albedo = a.xyz;
-  m.kind = u32(a.w + 0.5);
-  m.rough = b.w;
-  m.emit = vec3<f32>(0.0);
-  if (c.w > 0.0) {
-    let ch = (i32(floor(p.x * c.w)) + i32(floor(p.z * c.w))) & 1;
-    if (ch == 1) { m.albedo = c.xyz; }
-  }
-  if (m.kind == 3u) {
-    if (d.x > 1.5) { m.emit = P.col_b; }
-    else if (d.x > 0.5) { m.emit = P.col_a; }
-    else { m.emit = b.xyz * P.lk; }
-  }
-  return m;
-}
+// material(p, id) is generated per scene (id = object index).
 
-fn has_sun() -> bool { return S.sun_col.w > 0.5 && P.sky_kind != 2u; }
+fn has_sun() -> bool { return SUN_ON && P.sky_kind != 2u; }
 
 // Sun radiance for the current sky setting: day full, dusk dim and orange, night off.
 fn sun_rad() -> vec3<f32> {
   var k = vec3<f32>(P.lk);
   if (P.sky_kind == 1u) { k = k * vec3<f32>(0.35, 0.18, 0.08); }
-  return S.sun_col.xyz * k;
+  return SUN_COL * k;
 }
 
 fn sky(rd: vec3<f32>) -> vec3<f32> {
@@ -260,9 +234,10 @@ fn sky(rd: vec3<f32>) -> vec3<f32> {
   var c = mix(vec3<f32>(0.55, 0.62, 0.75), vec3<f32>(0.75, 0.88, 1.15), t) * 0.45;
   if (P.sky_kind == 1u) { c = mix(vec3<f32>(0.9, 0.45, 0.3), vec3<f32>(0.25, 0.3, 0.6), t) * 0.35; }
   if (P.sky_kind == 2u) { c = mix(vec3<f32>(0.05, 0.07, 0.14), vec3<f32>(0.02, 0.03, 0.08), t) * 0.8; }
-  if (has_sun() && dot(rd, S.sun_dir.xyz) > S.sun_dir.w) { c = c + sun_rad(); }
+  if (has_sun() && dot(rd, SUN_DIR) > SUN_COS) { c = c + sun_rad(); }
   return c;
 }
+
 fn schlick(c: f32, f0: f32) -> f32 {
   return f0 + (1.0 - f0) * pow(1.0 - c, 5.0);
 }
@@ -274,21 +249,21 @@ fn fresnel3(c: f32, f0: vec3<f32>) -> vec3<f32> {
 
 
 // ---------------------------------------------------------------- lights
-fn lamp_c(i: u32) -> vec3<f32> { return select(S.lamp1.xyz, S.lamp0.xyz, i == 0u); }
-fn lamp_r(i: u32) -> f32 { return select(S.lamp1.w, S.lamp0.w, i == 0u); }
+fn lamp_c(i: u32) -> vec3<f32> { return select(L1_C, L0_C, i == 0u); }
+fn lamp_r(i: u32) -> f32 { return select(L1_R, L0_R, i == 0u); }
 
 fn lamp_e(i: u32) -> vec3<f32> {
-  let c = select(S.lamp_c1, S.lamp_c0, i == 0u);
-  if (c.w > 1.5) { return P.col_b; }
-  if (c.w > 0.5) { return P.col_a; }
-  return c.xyz * P.lk;
+  let slot = select(L1_SLOT, L0_SLOT, i == 0u);
+  if (slot == 2) { return P.col_b; }
+  if (slot == 1) { return P.col_a; }
+  return select(L1_COL, L0_COL, i == 0u) * P.lk;
 }
 
 fn light_count() -> u32 {
   var n = 0u;
   if (has_sun()) { n = n + 1u; }
-  if (S.lamp0.w > 0.0) { n = n + 1u; }
-  if (S.lamp1.w > 0.0) { n = n + 1u; }
+  if (L0_R > 0.0) { n = n + 1u; }
+  if (L1_R > 0.0) { n = n + 1u; }
   return n;
 }
 
@@ -299,7 +274,7 @@ fn pick_light(n: u32) -> u32 {
     if (k == 0u) { return 0u; }
     k = k - 1u;
   }
-  if (S.lamp0.w > 0.0) {
+  if (L0_R > 0.0) {
     if (k == 0u) { return 1u; }
     k = k - 1u;
   }
@@ -323,49 +298,52 @@ fn box_occ(ro: vec3<f32>, dir: vec3<f32>, tmax: f32, c: vec3<f32>, h: vec3<f32>,
   return t1 > max(t0, 0.0) && t0 < tmax;
 }
 
-// Bounded exact marches of the non-convex shapes inside their bound spheres (own frame; torus 16 steps, Menger sponge 24).
-fn occ_menger(p0: vec4<f32>, p1: vec4<f32>, p2: vec4<f32>, ro: vec3<f32>, dir: vec3<f32>, tmax: f32) -> f32 {
-  let s = isect_sphere(ro, dir, p0.xyz, p2.w);
-  if (s.y <= 0.0 || s.x >= tmax) { return 1.0; }
-  let te = min(s.y, tmax);
-  var t = max(s.x, 0.02);
+// Bounded exact marches of the non-convex shapes inside their bound spheres (torus / cylinder 16 steps, Menger sponge 24).
+fn occ_menger(ro: vec3<f32>, dir: vec3<f32>, tmax: f32, c: vec3<f32>, s: f32, spin: f32, bound: f32) -> bool {
+  let b = isect_sphere(ro, dir, c, bound);
+  if (b.y <= 0.0 || b.x >= tmax) { return false; }
+  let te = min(b.y, tmax);
+  var t = max(b.x, 0.02);
   for (var i = 0; i < MENGER_SHADOW_STEPS; i = i + 1) {
-    let dd = eval_menger(p0, p1, p2, ro + dir * t, false);
-    if (dd < 0.0005 * (1.0 + t)) { return 0.0; }
+    let dd = d_menger(ro + dir * t, c, s, spin, bound, false);
+    if (dd < 0.0005 * (1.0 + t)) { return true; }
     t = t + dd;
-    if (t > te) { return 1.0; }
+    if (t > te) { return false; }
   }
-  return 1.0;
+  return false;
 }
 
-fn occ_torus(p0: vec4<f32>, p1: vec4<f32>, p2: vec4<f32>, ro: vec3<f32>, dir: vec3<f32>, tmax: f32) -> f32 {
-  let s = isect_sphere(ro, dir, p0.xyz, p2.w);
-  if (s.y <= 0.0 || s.x >= tmax) { return 1.0; }
-  let te = min(s.y, tmax);
-  var t = max(s.x, 0.02);
+fn occ_torus(ro: vec3<f32>, dir: vec3<f32>, tmax: f32, c: vec3<f32>, rr: vec2<f32>, spin: f32, bound: f32) -> bool {
+  let b = isect_sphere(ro, dir, c, bound);
+  if (b.y <= 0.0 || b.x >= tmax) { return false; }
+  let te = min(b.y, tmax);
+  var t = max(b.x, 0.02);
   for (var i = 0; i < 16; i = i + 1) {
-    let dd = eval_torus(p0, p1, p2, ro + dir * t);
-    if (dd < 0.0005 * (1.0 + t)) { return 0.0; }
+    let dd = d_torus(ro + dir * t, c, rr, spin, bound);
+    if (dd < 0.0005 * (1.0 + t)) { return true; }
     t = t + dd;
-    if (t > te) { return 1.0; }
+    if (t > te) { return false; }
   }
-  return 1.0;
+  return false;
 }
 
-// The blob pair is approximated by two slightly enlarged spheres and skipped for its own surface.
-fn occ_pair(p0: vec4<f32>, p1: vec4<f32>, p3: vec4<f32>, ro: vec3<f32>, dir: vec3<f32>, tmax: f32, self_hit: bool) -> f32 {
-  if (self_hit) { return 1.0; }
-  if (sph_occ(ro, dir, p0.xyz, p1.x + 0.02, tmax) || sph_occ(ro, dir, p3.xyz, p1.y + 0.02, tmax)) { return 0.0; }
-  return 1.0;
+fn occ_cyl(ro: vec3<f32>, dir: vec3<f32>, tmax: f32, c: vec3<f32>, r: f32, h: f32, spin: f32, bound: f32) -> bool {
+  let b = isect_sphere(ro, dir, c, bound);
+  if (b.y <= 0.0 || b.x >= tmax) { return false; }
+  let te = min(b.y, tmax);
+  var t = max(b.x, 0.02);
+  for (var i = 0; i < 16; i = i + 1) {
+    let dd = d_cyl(ro + dir * t, c, r, h, spin, bound);
+    if (dd < 0.0005 * (1.0 + t)) { return true; }
+    t = t + dd;
+    if (t > te) { return false; }
+  }
+  return false;
 }
 
-// Spheres and boxes: 0 = blocked, 1 = free, 2 = through a glass pane (tinted); convex shapes never shadow themselves.
-fn occ_simple(p0: vec4<f32>, p1: vec4<f32>, p2: vec4<f32>, ro: vec3<f32>, dir: vec3<f32>, tmax: f32) -> f32 {
-  var hit = false;
-  if (p0.w < 1.5) { hit = sph_occ(ro, dir, p0.xyz, p1.x, tmax); }
-  else { hit = box_occ(ro, dir, tmax, p0.xyz, p1.xyz, p2.y); }
-  if (!hit) { return 1.0; }
-  return select(0.0, 2.0, p2.z > 0.5);
+// The blob pair is approximated by two slightly enlarged spheres.
+fn occ_pair(ro: vec3<f32>, dir: vec3<f32>, tmax: f32, c: vec3<f32>, c2: vec3<f32>, r1: f32, r2: f32) -> bool {
+  return sph_occ(ro, dir, c, r1 + 0.02, tmax) || sph_occ(ro, dir, c2, r2 + 0.02, tmax);
 }
 
 struct LS { dir: vec3<f32>, tmax: f32, w: vec3<f32>, ok: bool };
@@ -381,9 +359,9 @@ fn sample_light(p: vec3<f32>, n: vec3<f32>, ro: vec3<f32>) -> LS {
   if (cnt == 0u) { return r; }
   let li = pick_light(cnt);
   var le = sun_rad();
-  var omega = 2.0 * PI * (1.0 - S.sun_dir.w);
+  var omega = 2.0 * PI * (1.0 - SUN_COS);
   if (li == 0u) {
-    r.dir = sample_cone(S.sun_dir.xyz, S.sun_dir.w);
+    r.dir = sample_cone(SUN_DIR, SUN_COS);
   } else {
     let lj = li - 1u;
     let c = lamp_c(lj);
@@ -429,8 +407,8 @@ fn direct_light_gi(p: vec3<f32>, n: vec3<f32>, id: f32) -> vec3<f32> {
 
 // Analytic single-sample caustic through the scene's glass sphere (lamps and sun): returns E/pi (multiply by albedo).
 fn caustic(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
-  let gc = S.caustic.xyz;
-  let gr = S.caustic.w;
+  let gc = CAU_C;
+  let gr = CAU_R;
   if (gr <= 0.0) { return vec3<f32>(0.0); }
   let to = gc - p;
   let dist = length(to);
@@ -463,7 +441,7 @@ fn caustic(p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
       if (hl.x > 0.0) { sum += lamp_e(li); }
     }
   }
-  if (has_sun() && dot(d2, S.sun_dir.xyz) > S.sun_dir.w) { sum += sun_rad(); }
+  if (has_sun() && dot(d2, SUN_DIR) > SUN_COS) { sum += sun_rad(); }
   return sum * ((1.0 - f_in) * (1.0 - f_out) * cos_n * omega / PI);
 }
 

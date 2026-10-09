@@ -36,13 +36,14 @@ impl Renderer {
         let pose = cam.pose();
         let mut r = Renderer { gfx, store: Store::new(), cam, sticks: [0.0; 4], adaptive: AdaptiveRes::new(0.25, 0.33, 0.33), governor: Governor::new(), warmup: 3, last_ms: 0.0, win,
             frame: 0, seed: 1, time: 0.0, last: Instant::now(), start: Instant::now(), prev_pose: pose,
-            prev_jitter: [0.0; 2], reset_history: true, fps_t: Instant::now(), fps_n: 0, log_t: Instant::now(), stats, custom: None, scene_loaded: -1 };
-        r.apply_scene();
+            prev_jitter: [0.0; 2], reset_history: true, fps_t: Instant::now(), fps_n: 0, log_t: Instant::now(), stats, custom: None, scene_loaded: crate::scene::DEFAULT_SCENE as i32 };
+        r.cam.apply(crate::scene::builtin(crate::scene::DEFAULT_SCENE).cam);
+        r.prev_pose = r.cam.pose();
         r
     }
 
     fn apply(&mut self, d: &crate::scene::SceneData) {
-        self.gfx.set_scene(&d.u);
+        self.gfx.set_scene(d);
         self.cam.apply(d.cam);
         self.prev_pose = self.cam.pose();
         self.reset_history = true;

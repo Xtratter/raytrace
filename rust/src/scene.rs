@@ -1,65 +1,73 @@
-//! Scene description: JSON -> `SceneData` (GPU uniform + camera setup). Built-in scenes are JSON files too (rust/scenes/).
+//! Scene description: JSON -> `SceneData`; scenegen.rs turns it into shader code. Built-in scenes are JSON files too (rust/scenes/).
 //! Format reference: docs/scenes.md.
-use bytemuck::{Pod, Zeroable};
 use serde_json::Value;
 
 use crate::camera::SceneCam;
 
-/// Slots 0..SIMPLE_SLOTS hold spheres and boxes (cheap to evaluate); the last three are dedicated: Menger sponge, torus, blob pair
-/// (at most one of each). That keeps the generated shader small: every expensive shape's code exists exactly once.
-pub const SIMPLE_SLOTS: usize = 16;
-pub const COMPLEX_SLOTS: usize = 3;
-pub const SLOT_MENGER: usize = SIMPLE_SLOTS;
-pub const SLOT_TORUS: usize = SIMPLE_SLOTS + 1;
-pub const SLOT_PAIR: usize = SIMPLE_SLOTS + 2;
-pub const MAX_PRIMS: usize = SIMPLE_SLOTS + COMPLEX_SLOTS;
-pub const MAX_MATS: usize = 16;
+/// Limits keep the generated shader small enough for mobile GPU compilers.
+pub const MAX_OBJECTS: usize = 32;
+pub const MAX_MATS: usize = 24;
+pub const MAX_COMPLEX: usize = 6;
 
-pub const KIND_SPHERE: f32 = 1.0;
-pub const KIND_BOX: f32 = 2.0;
-pub const KIND_TORUS: f32 = 3.0;
-pub const KIND_MENGER: f32 = 4.0;
-pub const KIND_PAIR: f32 = 6.0;
-
-/// p0 = (pos, kind), p1 = (size, aux), p2 = (material, spin, glass flag, bound radius), p3 = (pos2, 0). kind 0 = unused.
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable, Default, Debug, PartialEq)]
-pub struct Prim { pub p0: [f32; 4], pub p1: [f32; 4], pub p2: [f32; 4], pub p3: [f32; 4] }
-
-/// a = (colour, kind), b = (emission, roughness), c = (checker colour, checker scale), d = (user lamp colour slot, 0, 0, 0).
-/// kind: 0 diffuse, 1 metal, 2 glass (colour = tint), 3 emissive, 4 glossy (diffuse with a specular coat).
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable, Default, Debug, PartialEq)]
-pub struct Material { pub a: [f32; 4], pub b: [f32; 4], pub c: [f32; 4], pub d: [f32; 4] }
-
-/// Must match `struct SceneU` in scene.wgsl.
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable, Debug, PartialEq)]
-pub struct SceneU {
-    /// xyz = direction towards the sun, w = cos of its angular radius
-    pub sun_dir: [f32; 4],
-    /// rgb = radiance, w = 1 when the scene has a sun
-    pub sun_col: [f32; 4],
-    /// xyz = centre, w = radius (0 = no lamp)
-    pub lamp0: [f32; 4],
-    pub lamp1: [f32; 4],
-    /// rgb = fixed emission, w = user colour slot (0 none, 1 = light A setting, 2 = light B setting)
-    pub lamp_c0: [f32; 4],
-    pub lamp_c1: [f32; 4],
-    /// glass sphere for the analytic caustic: xyz, radius (0 = none)
-    pub caustic: [f32; 4],
-    pub prims: [Prim; MAX_PRIMS],
-    pub mats: [Material; MAX_MATS],
+#[derive(Debug, Clone, PartialEq)]
+pub enum Shape {
+    Sphere { r: f32 },
+    Box { half: [f32; 3], round: f32 },
+    Torus { big: f32, small: f32 },
+    Menger { s: f32 },
+    Cylinder { r: f32, h: f32 },
+    Blobs { pos2: [f32; 3], r1: f32, r2: f32, k: f32 },
 }
 
-const _: () = assert!(std::mem::size_of::<SceneU>() == 7 * 16 + MAX_PRIMS * 64 + MAX_MATS * 64);
+impl Shape {
+    pub fn complex(&self) -> bool { !matches!(self, Shape::Sphere { .. } | Shape::Box { .. }) }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Obj {
+    pub pos: [f32; 3],
+    pub shape: Shape,
+    pub spin: f32,
+    pub mat: usize,
+    /// glass box: tints the light passing through (shadow rays) instead of blocking it
+    pub filter: bool,
+    /// radius of a sphere around `pos` that contains the shape
+    pub bound: f32,
+}
+
+/// kind: 0 diffuse, 1 metal, 2 glass (colour = tint), 3 emissive, 4 glossy (diffuse under a specular coat).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Material {
+    pub color: [f32; 3],
+    pub kind: u8,
+    pub rough: f32,
+    pub emit: [f32; 3],
+    /// (second colour, tile size)
+    pub checker: Option<([f32; 3], f32)>,
+    /// emissive: 0 fixed colour, 1 / 2 = the "Light A / B colour" setting
+    pub slot: u8,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sun { pub dir: [f32; 3], /** radiance */ pub col: [f32; 3], pub cos: f32 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Lamp { pub pos: [f32; 3], pub r: f32, pub col: [f32; 3], pub slot: u8 }
 
 #[derive(Debug)]
 pub struct SceneData {
     pub name: String,
-    pub u: SceneU,
     pub cam: SceneCam,
+    pub sun: Option<Sun>,
+    pub lamps: Vec<Lamp>,
+    pub mats: Vec<Material>,
+    pub objs: Vec<Obj>,
+    /// first glass sphere: gets the analytic caustic
+    pub caustic: Option<([f32; 3], f32)>,
 }
+
+/// Scene used until a settings push selects another (matches the `scene` default in params.rs).
+pub const DEFAULT_SCENE: usize = 1;
 
 pub const BUILTIN: [(&str, &str); 3] = [
     ("Classic", include_str!("../scenes/classic.json")),
@@ -99,11 +107,11 @@ fn norm(v: [f32; 3]) -> Result<[f32; 3], String> {
     Ok([v[0] / l, v[1] / l, v[2] / l])
 }
 
-fn user_slot(o: &Value) -> Result<f32, String> {
+fn user_slot(o: &Value) -> Result<u8, String> {
     match o.get("user").and_then(|v| v.as_str()) {
-        None => Ok(0.0),
-        Some("a") => Ok(1.0),
-        Some("b") => Ok(2.0),
+        None => Ok(0),
+        Some("a") => Ok(1),
+        Some("b") => Ok(2),
         Some(s) => Err(format!("user: expected \"a\" or \"b\", got \"{s}\"")),
     }
 }
@@ -135,127 +143,114 @@ pub fn parse(json: &str) -> Result<SceneData, String> {
         }
     }
 
-    let mut u = SceneU::zeroed();
-    u.sun_dir = [0.0, 1.0, 0.0, 1.0];
-
     // sun
-    if let Some(s) = root.get("sun") {
-        if !s.is_null() {
-            let d = norm(vec3(s.get("dir").ok_or("sun: missing dir")?, "sun.dir")?)?;
-            let col = opt3(s, "color", [1.0, 0.95, 0.85])?;
-            let ang = num(s, "angle_deg", 1.5)?.clamp(0.05, 20.0);
-            u.sun_dir = [d[0], d[1], d[2], (ang.to_radians()).cos()];
+    let mut sun = None;
+    if let Some(sj) = root.get("sun") {
+        if !sj.is_null() {
+            let d = norm(vec3(sj.get("dir").ok_or("sun: missing dir")?, "sun.dir")?)?;
+            let col = opt3(sj, "color", [1.0, 0.95, 0.85])?;
+            let ang = num(sj, "angle_deg", 1.5)?.clamp(0.05, 20.0);
+            let cos = ang.to_radians().cos();
             // `color` = radiance of a white diffuse surface facing the sun; the shader needs the sun's own radiance
-            let k = std::f32::consts::PI / (2.0 * std::f32::consts::PI * (1.0 - u.sun_dir[3]));
-            u.sun_col = [col[0] * k, col[1] * k, col[2] * k, 1.0];
+            let k = std::f32::consts::PI / (2.0 * std::f32::consts::PI * (1.0 - cos));
+            sun = Some(Sun { dir: d, col: [col[0] * k, col[1] * k, col[2] * k], cos });
         }
     }
 
     // lamps
+    let mut lamps = vec![];
     if let Some(ls) = root.get("lamps") {
         let ls = ls.as_array().ok_or("lamps: expected a list")?;
         if ls.len() > 2 { return Err("lamps: at most 2".into()); }
-        for (i, l) in ls.iter().enumerate() {
-            let p = vec3(l.get("pos").ok_or("lamp: missing pos")?, "lamp.pos")?;
+        for l in ls {
+            let pos = vec3(l.get("pos").ok_or("lamp: missing pos")?, "lamp.pos")?;
             let r = num(l, "radius", 0.5)?;
             if r <= 0.0 { return Err("lamp: radius must be positive".into()); }
-            let c = opt3(l, "color", [30.0, 30.0, 30.0])?;
-            let slot = user_slot(l)?;
-            let (lamp, lc) = if i == 0 { (&mut u.lamp0, &mut u.lamp_c0) } else { (&mut u.lamp1, &mut u.lamp_c1) };
-            *lamp = [p[0], p[1], p[2], r];
-            *lc = [c[0], c[1], c[2], slot];
+            lamps.push(Lamp { pos, r, col: opt3(l, "color", [30.0, 30.0, 30.0])?, slot: user_slot(l)? });
         }
     }
 
     // materials
-    let mats = root.get("materials").and_then(|v| v.as_array()).ok_or("materials: expected a list")?;
-    if mats.is_empty() || mats.len() > MAX_MATS { return Err(format!("materials: 1..{MAX_MATS} required")); }
+    let mj = root.get("materials").and_then(|v| v.as_array()).ok_or("materials: expected a list")?;
+    if mj.is_empty() || mj.len() > MAX_MATS { return Err(format!("materials: 1..{MAX_MATS} required")); }
     let mut names: Vec<String> = vec![];
-    for (i, m) in mats.iter().enumerate() {
+    let mut mats = vec![];
+    for m in mj {
         let n = m.get("name").and_then(|v| v.as_str()).ok_or("material: missing name")?;
         if names.iter().any(|x| x == n) { return Err(format!("material \"{n}\" defined twice")); }
         names.push(n.to_string());
         let kind = match m.get("kind").and_then(|v| v.as_str()).unwrap_or("diffuse") {
-            "diffuse" => 0.0, "metal" => 1.0, "glass" => 2.0, "emissive" => 3.0, "glossy" => 4.0,
+            "diffuse" => 0, "metal" => 1, "glass" => 2, "emissive" => 3, "glossy" => 4,
             k => return Err(format!("material \"{n}\": unknown kind \"{k}\"")),
         };
-        let col = opt3(m, "color", [0.8, 0.8, 0.8])?;
-        let emit = opt3(m, "emit", [0.0; 3])?;
-        let rough = num(m, "rough", 0.0)?.clamp(0.0, 1.0);
-        let chk = opt3(m, "checker", [0.0; 3])?;
-        let cs = if m.get("checker").is_some() { num(m, "checker_scale", 1.0)?.max(0.01) } else { 0.0 };
-        let slot = user_slot(m)?;
-        u.mats[i] = Material { a: [col[0], col[1], col[2], kind], b: [emit[0], emit[1], emit[2], rough], c: [chk[0], chk[1], chk[2], cs], d: [slot, 0.0, 0.0, 0.0] };
+        let checker = if m.get("checker").is_some() { Some((opt3(m, "checker", [0.0; 3])?, num(m, "checker_scale", 1.0)?.max(0.01))) } else { None };
+        mats.push(Material {
+            color: opt3(m, "color", [0.8, 0.8, 0.8])?, kind, rough: num(m, "rough", 0.0)?.clamp(0.0, 1.0),
+            emit: opt3(m, "emit", [0.0; 3])?, checker, slot: user_slot(m)?,
+        });
     }
 
     // objects
-    let objs = root.get("objects").and_then(|v| v.as_array()).ok_or("objects: expected a list")?;
-    let is_simple = |o: &Value| matches!(o.get("type").and_then(|v| v.as_str()), Some("sphere") | Some("box"));
-    let n_simple = objs.iter().filter(|o| is_simple(o)).count();
-    if n_simple > SIMPLE_SLOTS { return Err(format!("objects: at most {SIMPLE_SLOTS} spheres and boxes")); }
-    let mut next_simple = 0;
-    let mut used = [false; COMPLEX_SLOTS];
-    for (i, o) in objs.iter().enumerate() {
-        let slot = if is_simple(o) { next_simple += 1; next_simple - 1 } else {
-            let s = match o.get("type").and_then(|v| v.as_str()) {
-                Some("menger") => SLOT_MENGER, Some("torus") => SLOT_TORUS, Some("blobs") => SLOT_PAIR,
-                t => return Err(format!("object {i}: unknown type \"{}\"", t.unwrap_or("?"))),
-            };
-            if used[s - SIMPLE_SLOTS] { return Err(format!("object {i}: at most one menger, one torus and one blobs object")); }
-            used[s - SIMPLE_SLOTS] = true;
-            s
-        };
+    let objs_j = root.get("objects").and_then(|v| v.as_array()).ok_or("objects: expected a list")?;
+    if objs_j.is_empty() { return Err("objects: at least one required".into()); }
+    if objs_j.len() > MAX_OBJECTS { return Err(format!("objects: at most {MAX_OBJECTS}")); }
+    let mut objs = vec![];
+    let mut caustic = None;
+    for (i, o) in objs_j.iter().enumerate() {
         let ty = o.get("type").and_then(|v| v.as_str()).ok_or("object: missing type")?;
         let mname = o.get("material").and_then(|v| v.as_str()).ok_or_else(|| format!("object {i}: missing material"))?;
         let mi = names.iter().position(|x| x == mname).ok_or_else(|| format!("object {i}: unknown material \"{mname}\""))?;
         let pos = vec3(o.get("pos").ok_or_else(|| format!("object {i}: missing pos"))?, "pos")?;
         let spin = num(o, "spin", 0.0)?;
-        let mut p = Prim::default();
-        let (kind, size, aux, bound, pos2);
-        match ty {
+        let pair = |key: &str| -> Result<(f32, f32), String> {
+            let r = o.get(key).and_then(|v| v.as_array()).filter(|a| a.len() == 2).ok_or_else(|| format!("object {i}: {ty} needs {key} [a, b]"))?;
+            let (a, b) = (r[0].as_f64().unwrap_or(0.0) as f32, r[1].as_f64().unwrap_or(0.0) as f32);
+            if a <= 0.0 || b <= 0.0 { return Err(format!("object {i}: {key} must be positive")); }
+            Ok((a, b))
+        };
+        let (shape, bound) = match ty {
             "sphere" => {
                 let r = num(o, "radius", 1.0)?;
                 if r <= 0.0 { return Err(format!("object {i}: radius must be positive")); }
-                kind = KIND_SPHERE; size = [r, 0.0, 0.0]; aux = 0.0; bound = r; pos2 = [0.0; 3];
+                (Shape::Sphere { r }, r)
             }
             "box" => {
-                let s = vec3(o.get("size").ok_or_else(|| format!("object {i}: box needs size [half-x, half-y, half-z]"))?, "size")?;
-                if s.iter().any(|v| *v <= 0.0) { return Err(format!("object {i}: size must be positive")); }
-                kind = KIND_BOX; size = s; aux = num(o, "round", 0.0)?.clamp(0.0, s[0].min(s[1]).min(s[2])); bound = (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt(); pos2 = [0.0; 3];
+                let h = vec3(o.get("size").ok_or_else(|| format!("object {i}: box needs size [half-x, half-y, half-z]"))?, "size")?;
+                if h.iter().any(|v| *v <= 0.0) { return Err(format!("object {i}: size must be positive")); }
+                let round = num(o, "round", 0.0)?.clamp(0.0, h[0].min(h[1]).min(h[2]));
+                (Shape::Box { half: h, round }, (h[0] * h[0] + h[1] * h[1] + h[2] * h[2]).sqrt())
             }
-            "torus" => {
-                let r = o.get("radii").and_then(|v| v.as_array()).filter(|a| a.len() == 2).ok_or_else(|| format!("object {i}: torus needs radii [major, minor]"))?;
-                let (a, b) = (r[0].as_f64().unwrap_or(0.0) as f32, r[1].as_f64().unwrap_or(0.0) as f32);
-                if a <= 0.0 || b <= 0.0 { return Err(format!("object {i}: radii must be positive")); }
-                kind = KIND_TORUS; size = [a, b, 0.0]; aux = 0.0; bound = a + b + 0.05; pos2 = [0.0; 3];
-            }
+            "torus" => { let (a, b) = pair("radii")?; (Shape::Torus { big: a, small: b }, a + b + 0.05) }
             "menger" => {
                 let s = num(o, "size", 1.0)?;
                 if s <= 0.0 { return Err(format!("object {i}: size must be positive")); }
-                kind = KIND_MENGER; size = [s, 0.0, 0.0]; aux = 0.0; bound = s * 1.8; pos2 = [0.0; 3];
+                (Shape::Menger { s }, s * 1.8)
+            }
+            "cylinder" => {
+                let r = num(o, "radius", 0.5)?;
+                let h = num(o, "half_height", 0.5)?;
+                if r <= 0.0 || h <= 0.0 { return Err(format!("object {i}: radius and half_height must be positive")); }
+                (Shape::Cylinder { r, h }, (r * r + h * h).sqrt() + 0.02)
             }
             "blobs" => {
-                let p2 = vec3(o.get("pos2").ok_or_else(|| format!("object {i}: blobs need pos2"))?, "pos2")?;
-                let r = o.get("radii").and_then(|v| v.as_array()).filter(|a| a.len() == 2).ok_or_else(|| format!("object {i}: blobs need radii [r1, r2]"))?;
-                let (a, b) = (r[0].as_f64().unwrap_or(0.0) as f32, r[1].as_f64().unwrap_or(0.0) as f32);
+                let pos2 = vec3(o.get("pos2").ok_or_else(|| format!("object {i}: blobs need pos2"))?, "pos2")?;
+                let (a, b) = pair("radii")?;
                 let k = num(o, "smooth", 0.35)?.max(0.01);
-                if a <= 0.0 || b <= 0.0 { return Err(format!("object {i}: radii must be positive")); }
-                let d = ((p2[0] - pos[0]).powi(2) + (p2[1] - pos[1]).powi(2) + (p2[2] - pos[2]).powi(2)).sqrt();
-                kind = KIND_PAIR; size = [a, b, 0.0]; aux = k; bound = d + a.max(b) + k; pos2 = p2;
+                let d = ((pos2[0] - pos[0]).powi(2) + (pos2[1] - pos[1]).powi(2) + (pos2[2] - pos[2]).powi(2)).sqrt();
+                (Shape::Blobs { pos2, r1: a, r2: b, k }, d + a.max(b) + k)
             }
             t => return Err(format!("object {i}: unknown type \"{t}\"")),
-        }
+        };
         // glass boxes are tinted-transparent for shadow rays; glass spheres block them (their light comes from the caustic term)
-        let glass = if u.mats[mi].a[3] == 2.0 && kind == KIND_BOX { 1.0 } else { 0.0 };
-        p.p0 = [pos[0], pos[1], pos[2], kind];
-        p.p1 = [size[0], size[1], size[2], aux];
-        p.p2 = [mi as f32, spin, glass, bound];
-        p.p3 = [pos2[0], pos2[1], pos2[2], 0.0];
-        u.prims[slot] = p;
-        if u.mats[mi].a[3] == 2.0 && kind == KIND_SPHERE && u.caustic[3] == 0.0 { u.caustic = [pos[0], pos[1], pos[2], size[0]]; }
+        let glass = mats[mi].kind == 2;
+        let filter = glass && matches!(shape, Shape::Box { .. });
+        if glass && caustic.is_none() { if let Shape::Sphere { r } = shape { caustic = Some((pos, r)); } }
+        objs.push(Obj { pos, shape, spin, mat: mi, filter, bound });
     }
-    if objs.is_empty() { return Err("objects: at least one required".into()); }
-    Ok(SceneData { name, u, cam })
+    if objs.iter().filter(|o| o.shape.complex()).count() > MAX_COMPLEX {
+        return Err(format!("objects: at most {MAX_COMPLEX} of torus, menger, cylinder and blobs"));
+    }
+    Ok(SceneData { name, cam, sun, lamps, mats, objs, caustic })
 }
 
 #[cfg(test)]
@@ -266,7 +261,7 @@ mod tests {
     fn builtins_parse() {
         for (n, j) in BUILTIN {
             let s = parse(j).unwrap_or_else(|e| panic!("{n}: {e}"));
-            assert!(s.u.prims.iter().any(|p| p.p0[3] > 0.5), "{n}");
+            assert!(!s.objs.is_empty(), "{n}");
         }
     }
 
@@ -274,19 +269,19 @@ mod tests {
     fn classic_matches_old_hardcoded_scene() {
         let s = builtin(0);
         assert_eq!(s.cam, SceneCam::default());
-        assert_eq!(s.u.lamp0, [-2.5, 5.0, 1.5, 0.8]);
-        assert_eq!(s.u.lamp1, [4.0, 3.0, -3.5, 0.45]);
-        assert_eq!(s.u.caustic, [1.2, 0.8, 1.0, 0.8]);
-        assert_eq!(s.u.sun_col[3], 0.0);
+        assert_eq!((s.lamps[0].pos, s.lamps[0].r), ([-2.5, 5.0, 1.5], 0.8));
+        assert_eq!((s.lamps[1].pos, s.lamps[1].r), ([4.0, 3.0, -3.5], 0.45));
+        assert_eq!(s.caustic, Some(([1.2, 0.8, 1.0], 0.8)));
+        assert!(s.sun.is_none());
     }
 
     #[test]
     fn sun_room_has_sun_and_tinted_glass() {
         let s = builtin(1);
-        assert_eq!(s.u.sun_col[3], 1.0);
-        assert!(s.u.prims.iter().any(|p| p.p0[3] > 0.5 && p.p2[2] > 0.5));
-        let l = (0..3).map(|i| s.u.sun_dir[i] * s.u.sun_dir[i]).sum::<f32>().sqrt();
+        let sun = s.sun.as_ref().unwrap();
+        let l = sun.dir.iter().map(|v| v * v).sum::<f32>().sqrt();
         assert!((l - 1.0).abs() < 1e-4);
+        assert!(s.objs.iter().any(|o| o.filter));
     }
 
     #[test]
@@ -303,16 +298,10 @@ mod tests {
 
     #[test]
     fn limits() {
-        let objs: Vec<String> = (0..17).map(|_| r#"{"type":"sphere","pos":[0,0,0],"material":"a"}"#.to_string()).collect();
-        let j = format!(r#"{{"materials":[{{"name":"a"}}],"objects":[{}]}}"#, objs.join(","));
-        assert!(parse(&j).unwrap_err().contains("at most"));
-        let objs: Vec<String> = (0..2).map(|_| r#"{"type":"menger","pos":[0,0,0],"material":"a"}"#.to_string()).collect();
-        let j = format!(r#"{{"materials":[{{"name":"a"}}],"objects":[{}]}}"#, objs.join(","));
-        assert!(parse(&j).unwrap_err().contains("at most"));
-        // complex shapes land in the last slots whatever the order in the file
-        let j = r#"{"materials":[{"name":"a"}],"objects":[{"type":"menger","pos":[0,0,0],"material":"a"},{"type":"sphere","pos":[1,0,0],"material":"a"}]}"#;
-        let s = parse(j).unwrap();
-        assert_eq!(s.u.prims[0].p0[3], KIND_SPHERE);
-        assert_eq!(s.u.prims[SLOT_MENGER].p0[3], KIND_MENGER);
+        let one = |t: &str| format!(r#"{{"type":"{t}","pos":[0,0,0],"size":{},"material":"a"}}"#, if t == "menger" { "1" } else { "[1,1,1]" });
+        let mk = |n: usize, t: &str| format!(r#"{{"materials":[{{"name":"a"}}],"objects":[{}]}}"#, (0..n).map(|_| one(t)).collect::<Vec<_>>().join(","));
+        assert!(parse(&mk(MAX_OBJECTS + 1, "sphere")).unwrap_err().contains("at most"));
+        assert!(parse(&mk(MAX_COMPLEX + 1, "menger")).unwrap_err().contains("at most"));
+        assert!(parse(&mk(MAX_COMPLEX, "menger")).is_ok());
     }
 }

@@ -36,6 +36,7 @@ jobs:
           ./gradlew --no-daemon testDebugUnitTest assembleRelease
       - uses: actions/upload-artifact@v4
         with:
+          retention-days: 1
           name: raytrace-${{ github.sha }}
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
@@ -63,6 +64,7 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
+          retention-days: 1
           name: desktop-screenshot
           path: screenshot*.png
           if-no-files-found: warn
@@ -90,6 +92,7 @@ jobs:
           echo "APPIMAGE=Raytrace-$v-x86_64.AppImage" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:
+          retention-days: 1
           name: raytrace-linux-${{ github.sha }}
           path: |
             ${{ env.TARBALL }}
